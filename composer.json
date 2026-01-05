@@ -1,0 +1,29 @@
+{
+  "name": "byfallcode/byfall-crud",
+  "description": "Laravel API CRUD generator (models, repositories, requests, controllers, resources, factories, seeders, Postman collections)",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Byfall Code",
+      "email": "contact@byfallcode.com"
+    }
+  ],
+  "require": {
+    "php": "^8.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "ByfallCode\\ByfallCrud\\": "src/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "ByfallCode\\ByfallCrud\\ByfallCrudServiceProvider"
+      ]
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
