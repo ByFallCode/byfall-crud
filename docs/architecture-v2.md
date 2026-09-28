@@ -183,6 +183,38 @@ and delegate API render callbacks to `ApiExceptionRenderer`, passing
 `(bool) config('app.debug')`. This choice is explicit and avoids claiming that a
 fragile bootstrap rewrite is safe.
 
+## API installation and Smart Controllers
+
+V2-L06 makes the L05 foundation installable with `php artisan byfall:install`.
+Installation publishes autonomous application code to `App\Support`,
+`App\Http\Middleware` and `App\Providers`; published files contain no
+`ByfallCode\ByfallCrud` runtime reference. A generated application can therefore
+retain the installed foundation after removing the generator package.
+
+The installer deliberately leaves `bootstrap/app.php` untouched. For a standard
+Laravel 12/13 `bootstrap/providers.php`, it uses Laravel's own
+`ServiceProvider::addProviderToBootstrapFile()` API to register
+`App\Providers\ByfallApiServiceProvider`. Before calling that API, it recognizes a
+conservative static provider-array shape. Custom or dynamic files are never
+rewritten: the command reports a partial installation, exits unsuccessfully and
+prints the exact provider line for manual addition. The published provider adds
+`ForceJsonResponse` to the API middleware group and delegates API exception
+rendering to the installed renderer. Web exceptions continue through Laravel.
+
+Publication uses `SafeFileWriter`. Existing application files are preserved by
+default; `--force` replaces only the known published classes. It never authorizes an
+unsafe bootstrap mutation. Repeated installation preserves file contents and the
+framework registration helper de-duplicates and sorts providers.
+
+`ControllerGenerator` completes the Smart Generator set for the current CRUD
+surface. It consumes `EntityMetadata` and `GenerationContext`, preserves the legacy
+Repository contract, uses validated FormRequest input, resources when enabled,
+`ApiResponse::paginated`, `created`, `success` and a genuine 204 `noContent`.
+The route parameter is shared with `UpdateRequestGenerator`. If the API Foundation
+is absent, `make:entity` emits an explicit warning and generates the characterized
+legacy controller instead of producing a broken class. Search, filtering, sorting
+and includes remain outside L06.
+
 ## Metadata roles
 
 - `EntityMetadata` is the normalized entity boundary. In V2-L01 it carries every

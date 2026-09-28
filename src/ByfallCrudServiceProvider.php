@@ -5,6 +5,7 @@ namespace ByfallCode\ByfallCrud;
 use ByfallCode\ByfallCrud\Console\Commands\DeleteEntity;
 use ByfallCode\ByfallCrud\Console\Commands\MakeApiCollection;
 use ByfallCode\ByfallCrud\Console\Commands\MakeEntity;
+use ByfallCode\ByfallCrud\Console\Commands\Install;
 use Illuminate\Support\ServiceProvider;
 
 class ByfallCrudServiceProvider extends ServiceProvider
@@ -21,6 +22,7 @@ class ByfallCrudServiceProvider extends ServiceProvider
                 MakeEntity::class,
                 DeleteEntity::class,
                 MakeApiCollection::class,
+                Install::class,
             ]);
         }
     }

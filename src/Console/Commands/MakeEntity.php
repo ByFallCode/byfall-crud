@@ -6,6 +6,7 @@ namespace ByfallCode\ByfallCrud\Console\Commands;
 use ByfallCode\ByfallCrud\Metadata\LegacyMetadataAdapter;
 use ByfallCode\ByfallCrud\Inference\MetadataEnricher;
 use ByfallCode\ByfallCrud\Generation\GenerationContext;
+use ByfallCode\ByfallCrud\Generation\ControllerGenerator;
 use ByfallCode\ByfallCrud\Generation\ModelGenerator;
 use ByfallCode\ByfallCrud\Generation\ResourceGenerator;
 use ByfallCode\ByfallCrud\Generation\StoreRequestGenerator;
@@ -73,16 +74,17 @@ class MakeEntity extends Command
         }
 
         $meta = LegacyMetadataAdapter::toLegacy($metadata);
+        $withResources = !$this->option('no-resources');
         $context = new GenerationContext(
             entityName: $name,
             routeParameter: Str::snake(Str::singular($name)),
+            withResources: $withResources,
         );
 
         // ---------- Génération ----------
-        $withResources = !$this->option('no-resources');
         $this->generateSmartArtifacts($metadata, $context, $force, $withResources);
         $this->generateRepository($name, $force);
-        $this->generateController($name, $force, $withResources);
+        $this->generateController($metadata, $context, $force, $withResources);
 
         if ($withResources) {
             $this->generateResourceCollection($name, $force);
@@ -226,7 +228,29 @@ PHP;
         $this->info("✅ Repository : app/Repositories/{$name}Repository.php");
     }
 
-    private function generateController(string $name, bool $force, bool $withResources): void
+    private function generateController(
+        EntityMetadata $metadata,
+        GenerationContext $context,
+        bool $force,
+        bool $withResources,
+    ): void
+    {
+        if (!File::exists(app_path('Support/ApiResponse.php'))) {
+            $this->warn('API Foundation absente; Controller legacy généré. Exécute php artisan byfall:install pour activer le Smart Controller.');
+            $this->generateLegacyController($context->entityName, $force, $withResources);
+            return;
+        }
+
+        $this->writeSmartArtifact(
+            new SafeFileWriter(),
+            app_path("Http/Controllers/{$context->entityName}Controller.php"),
+            (new ControllerGenerator())->generate($metadata, $context),
+            $force,
+            "Controller : app/Http/Controllers/{$context->entityName}Controller.php",
+        );
+    }
+
+    private function generateLegacyController(string $name, bool $force, bool $withResources): void
     {
         $dir  = app_path('Http/Controllers');
         $path = $dir.DIRECTORY_SEPARATOR.$name.'Controller.php';

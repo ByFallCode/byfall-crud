@@ -85,4 +85,51 @@ final class MakeEntityCommandTest extends TestCase
             ->expectsOutput('Driver non supporté : sqlite')
             ->assertExitCode(1);
     }
+
+    public function test_missing_api_foundation_explicitly_falls_back_to_legacy_controller(): void
+    {
+        $this->artisan('make:entity', [
+            'name' => 'Category',
+            '--source' => 'migration',
+            '--migration' => $this->fixtureMigration(),
+            '--no-factory' => true,
+            '--no-seeder' => true,
+            '--no-collection-json' => true,
+        ])
+            ->expectsOutputToContain('API Foundation absente; Controller legacy généré.')
+            ->assertExitCode(0);
+
+        $controller = File::get(app_path('Http/Controllers/CategoryController.php'));
+        self::assertStringNotContainsString('App\\Support\\ApiResponse', $controller);
+        self::assertStringContainsString('response()->json', $controller);
+    }
+
+    public function test_installed_api_foundation_enables_the_smart_controller(): void
+    {
+        $foundation = app_path('Support/ApiResponse.php');
+        File::ensureDirectoryExists(dirname($foundation));
+        File::put($foundation, '<?php // installed API Foundation fixture');
+        try {
+            $this->artisan('make:entity', [
+                'name' => 'Category',
+                '--source' => 'migration',
+                '--migration' => $this->fixtureMigration(),
+                '--no-factory' => true,
+                '--no-seeder' => true,
+                '--no-collection-json' => true,
+            ])->assertExitCode(0);
+
+            $controller = File::get(app_path('Http/Controllers/CategoryController.php'));
+            self::assertStringContainsString('use App\\Support\\ApiResponse;', $controller);
+            self::assertStringContainsString('$request->validated()', $controller);
+            self::assertStringContainsString('ApiResponse::paginated', $controller);
+            self::assertStringContainsString('ApiResponse::created', $controller);
+            self::assertStringContainsString('ApiResponse::noContent', $controller);
+            $process = new Process([PHP_BINARY, '-l', app_path('Http/Controllers/CategoryController.php')]);
+            $process->run();
+            self::assertSame(0, $process->getExitCode(), $process->getErrorOutput().$process->getOutput());
+        } finally {
+            File::delete($foundation);
+        }
+    }
 }

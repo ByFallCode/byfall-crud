@@ -64,13 +64,32 @@ Compatibility is claimed only for combinations that complete the full CI job.
 
 ```bash
 composer require byfallcode/byfall-crud
-
+php artisan byfall:install
+php artisan make:entity Product
 ```
 ---
 
 Laravel automatically discovers the service provider.
 
+`byfall:install` publishes autonomous Laravel classes under `App\Support` and
+`App\Http\Middleware`, plus `App\Providers\ByfallApiServiceProvider`. It registers
+that provider through Laravel's `bootstrap/providers.php` mechanism. Existing files
+are preserved; use `--force` only when you intentionally want to replace the
+published foundation classes.
+
+If `bootstrap/providers.php` has a custom or unrecognized structure, the command
+does not rewrite it. It exits with a partial-installation warning and prints the
+exact provider line to add manually:
+
+```php
+App\Providers\ByfallApiServiceProvider::class,
+```
+
+Running `byfall:install` repeatedly is safe and does not duplicate providers.
+
 ## 🚀 Available Artisan Commands
+
+byfall:install – Install the API response, middleware and exception foundation
 
 make:entity – Generate a complete API CRUD
 

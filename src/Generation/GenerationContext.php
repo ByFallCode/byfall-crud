@@ -11,5 +11,6 @@ final class GenerationContext
         public readonly string $requestNamespace = 'App\\Http\\Requests',
         public readonly string $resourceNamespace = 'App\\Http\\Resources',
         public readonly ?string $routeParameter = null,
+        public readonly bool $withResources = true,
     ) {}
 }
