@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace ByfallCode\ByfallCrud\Console\Commands;
 
+use ByfallCode\ByfallCrud\Metadata\LegacyMetadataAdapter;
+use ByfallCode\ByfallCrud\Support\TypeMapper;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -32,17 +34,22 @@ class MakeEntity extends Command
         $force  = (bool) $this->option('force');
 
         // ---------- Inférence ----------
-        if ($source === 'db') {
-            $meta = $this->inferFromDatabase($table);
-        } elseif ($source === 'migration') {
-            $migration = (string) $this->option('migration');
-            if (!$migration || !File::exists($migration)) {
-                $this->error('--migration est requis et doit exister.');
+        try {
+            if ($source === 'db') {
+                $meta = $this->inferFromDatabase($table);
+            } elseif ($source === 'migration') {
+                $migration = (string) $this->option('migration');
+                if (!$migration || !File::exists($migration)) {
+                    $this->error('--migration est requis et doit exister.');
+                    return self::FAILURE;
+                }
+                $meta = $this->inferFromMigration($migration, $table);
+            } else {
+                $this->error("--source doit être 'db' ou 'migration'.");
                 return self::FAILURE;
             }
-            $meta = $this->inferFromMigration($migration, $table);
-        } else {
-            $this->error("--source doit être 'db' ou 'migration'.");
+        } catch (\RuntimeException $exception) {
+            $this->error($exception->getMessage());
             return self::FAILURE;
         }
 
@@ -51,13 +58,16 @@ class MakeEntity extends Command
             return self::FAILURE;
         }
 
+        $meta = LegacyMetadataAdapter::toLegacy(LegacyMetadataAdapter::fromLegacy($meta, $name));
+
         // ---------- Génération ----------
+        $withResources = !$this->option('no-resources');
         $this->generateModel($name, $meta, $force);
         $this->generateRepository($name, $force);
         $this->generateFormRequests($name, $meta, $force);
-        $this->generateController($name, $force);
+        $this->generateController($name, $force, $withResources);
 
-        if (!$this->option('no-resources')) {
+        if ($withResources) {
             $this->generateApiResources($name, $meta, $force);
         }
         if (!$this->option('no-factory')) {
@@ -67,7 +77,7 @@ class MakeEntity extends Command
             $this->generateSeeder($name, $force);
         }
         if (!$this->option('no-collection-json')) {
-            $this->generateApiCollectionJson($name, $meta);
+            $this->generateApiCollectionJson($name, $meta, $force);
         }
 
         $this->line('');
@@ -234,7 +244,7 @@ class MakeEntity extends Command
             $ctype    = (string) ($r['column_type'] ?? '');
 
             $fields[] = $col;
-            $casts[$col] = $this->sqlTypeToCast($type);
+            $casts[$col] = TypeMapper::sqlTypeToCast($type);
 
             // Enum (MySQL uniquement)
             $enumValues = $this->extractEnumValues($ctype);
@@ -298,10 +308,10 @@ class MakeEntity extends Command
                 $nullable = str_contains($chain, 'nullable()');
                 $isUnique = str_contains($chain, 'unique()');
                 $len      = $argLen ? (int)$argLen : null;
-                $type     = $this->methodToSqlType($method);
+                $type     = TypeMapper::methodToSqlType($method);
 
                 $fields[] = $col;
-                $casts[$col] = $this->sqlTypeToCast($type);
+                $casts[$col] = TypeMapper::sqlTypeToCast($type);
                 if ($isUnique) $unique[] = $col;
 
                 if ($method === 'foreignid') {
@@ -353,39 +363,6 @@ class MakeEntity extends Command
             return $m[1];
         }
         return null;
-    }
-
-    private function methodToSqlType(string $method): string
-    {
-        return match ($method) {
-            'string','char' => 'varchar',
-            'text','mediumtext','longtext' => 'text',
-            'integer','tinyinteger','smallinteger','mediuminteger' => 'int',
-            'biginteger','foreignid' => 'bigint',
-            'boolean' => 'boolean',
-            'date' => 'date',
-            'datetime','datetimetz' => 'datetime',
-            'timestamp','timestamptz' => 'timestamp',
-            'json','jsonb' => 'json',
-            'decimal' => 'decimal',
-            'float','double' => 'double',
-            'enum' => 'enum',
-            default => 'varchar',
-        };
-    }
-
-    private function sqlTypeToCast(string $type): string
-    {
-        return match (true) {
-            $type === 'enum' => 'string',
-            str_contains($type, 'int') => 'integer',
-            str_contains($type, 'bool') => 'boolean',
-            in_array($type, ['decimal','numeric','double','float'], true) => 'float',
-            in_array($type, ['json','jsonb'], true) => 'array',
-            $type === 'date' => 'date',
-            str_contains($type, 'time') || str_contains($type, 'date') => 'datetime',
-            default => 'string',
-        };
     }
 
     private function sqlMetaToRules(
@@ -663,7 +640,7 @@ PHP;
         return $out;
     }
 
-    private function generateController(string $name, bool $force): void
+    private function generateController(string $name, bool $force, bool $withResources): void
     {
         $dir  = app_path('Http/Controllers');
         $path = $dir.DIRECTORY_SEPARATOR.$name.'Controller.php';
@@ -674,6 +651,16 @@ PHP;
         }
 
         $param = \Illuminate\Support\Str::camel($name); // ex: Test => test
+        $resourceUses = $withResources
+            ? "use App\\Http\\Resources\\{$name}Resource;\nuse App\\Http\\Resources\\{$name}Collection;\n"
+            : '';
+        $indexValue = $withResources
+            ? "new {$name}Collection(\$this->repository->paginate(\$perPage))"
+            : "\$this->repository->paginate(\$perPage)";
+        $itemValue = $withResources ? "new {$name}Resource(\$item)" : '$item';
+        $showValue = $withResources
+            ? "new {$name}Resource(\$this->repository->find(\${$param}))"
+            : "\$this->repository->find(\${$param})";
 
         $stub = <<<PHP
 <?php
@@ -684,9 +671,7 @@ namespace App\Http\Controllers;
 use App\Repositories\\{$name}Repository;
 use App\Http\Requests\\{$name}\Store{$name}Request;
 use App\Http\Requests\\{$name}\Update{$name}Request;
-use App\Http\Resources\\{$name}Resource;
-use App\Http\Resources\\{$name}Collection;
-use Illuminate\Http\JsonResponse;
+{$resourceUses}use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class {$name}Controller extends Controller
@@ -696,24 +681,24 @@ class {$name}Controller extends Controller
     public function index(Request \$request): JsonResponse
     {
         \$perPage = (int) (\$request->integer('per_page') ?: 15);
-        return response()->json(new {$name}Collection(\$this->repository->paginate(\$perPage)));
+        return response()->json({$indexValue});
     }
 
     public function store(Store{$name}Request \$request): JsonResponse
     {
         \$item = \$this->repository->create(\$request->validated());
-        return response()->json(new {$name}Resource(\$item), 201);
+        return response()->json({$itemValue}, 201);
     }
 
     public function show(int|string \${$param}): JsonResponse
     {
-        return response()->json(new {$name}Resource(\$this->repository->find(\${$param})));
+        return response()->json({$showValue});
     }
 
     public function update(Update{$name}Request \$request, int|string \${$param}): JsonResponse
     {
         \$item = \$this->repository->update(\${$param}, \$request->validated());
-        return response()->json(new {$name}Resource(\$item));
+        return response()->json({$itemValue});
     }
 
     public function destroy(int|string \${$param}): JsonResponse
@@ -723,6 +708,8 @@ class {$name}Controller extends Controller
     }
 }
 PHP;
+
+        $stub .= PHP_EOL;
 
         \Illuminate\Support\Facades\File::put($path, $stub);
         $this->info("✅ Controller : app/Http/Controllers/{$name}Controller.php");
@@ -864,7 +851,7 @@ PHP;
         $this->line("➡️ Pense à l’ajouter dans DatabaseSeeder: \$this->call({$name}Seeder::class);");
     }
 
-    private function generateApiCollectionJson(string $name, array $meta): void
+    private function generateApiCollectionJson(string $name, array $meta, bool $force): void
     {
         $slug = Str::kebab(Str::pluralStudly($name));
         $env  = '{{base_url}}';
@@ -905,6 +892,10 @@ PHP;
         $dir = storage_path('api-collections');
         if (!File::exists($dir)) File::makeDirectory($dir, 0755, true);
         $path = $dir.DIRECTORY_SEPARATOR.$name.'_collection.json';
+        if (File::exists($path) && !$force) {
+            $this->warn("⚠️ Collection API JSON existe déjà: storage/api-collections/{$name}_collection.json");
+            return;
+        }
         File::put($path, json_encode($collection, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));
         $this->info("✅ Collection API JSON : storage/api-collections/{$name}_collection.json");
     }

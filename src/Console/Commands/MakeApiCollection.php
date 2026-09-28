@@ -1,6 +1,7 @@
 <?php
 namespace ByfallCode\ByfallCrud\Console\Commands;
 
+use ByfallCode\ByfallCrud\Support\TypeMapper;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -17,6 +18,7 @@ class MakeApiCollection extends Command
         {--base-url=http://localhost:8000 : Base URL variable par défaut}
         {--skip-pivots : Tenter d’ignorer les tables pivot (2 FKs, pas d’ID auto)}
         {--pretty : Beautifier le JSON}
+        {--force : Écraser le fichier de sortie existant}
     ';
 
     protected $description = "Génère une collection Postman globale (CRUD) pour toute la base ou toutes les migrations — sans vues.";
@@ -30,12 +32,27 @@ class MakeApiCollection extends Command
         $except   = $this->csvToArray((string)$this->option('except'));
         $skipPiv  = (bool)$this->option('skip-pivots');
 
-        $tablesMeta = ($source === 'db')
-            ? $this->collectFromDatabase($only, $except, $skipPiv)
-            : $this->collectFromMigrations(
-                (string)$this->option('migrations') ?: base_path('database/migrations'),
-                $only, $except, $skipPiv
-            );
+        if (!in_array($source, ['db', 'migrations'], true)) {
+            $this->error("--source doit être 'db' ou 'migrations'.");
+            return self::FAILURE;
+        }
+
+        if (File::exists($outPath) && !$this->option('force')) {
+            $this->warn("Le fichier de sortie existe déjà: {$outPath}. Utilisez --force pour l'écraser.");
+            return self::SUCCESS;
+        }
+
+        try {
+            $tablesMeta = ($source === 'db')
+                ? $this->collectFromDatabase($only, $except, $skipPiv)
+                : $this->collectFromMigrations(
+                    (string)$this->option('migrations') ?: base_path('database/migrations'),
+                    $only, $except, $skipPiv
+                );
+        } catch (\RuntimeException $exception) {
+            $this->error($exception->getMessage());
+            return self::FAILURE;
+        }
 
         if (empty($tablesMeta)) {
             $this->warn('Aucune table détectée.');
@@ -130,8 +147,8 @@ class MakeApiCollection extends Command
             }
 
             // Construire meta simple
-            [$fields, $casts] = $this->columnsToFieldsAndCasts($cols);
-            $maybePivot = $this->isPivotTableGuess($table, $fields, $fks);
+            [$fields, $casts, $hasId] = $this->columnsToFieldsAndCasts($cols);
+            $maybePivot = $this->isPivotTableGuess($table, $fields, $fks, $hasId);
             if ($skipPivots && $maybePivot) {
                 $this->line("↷ Ignoré (pivot présumé) : {$table}");
                 continue;
@@ -173,6 +190,7 @@ class MakeApiCollection extends Command
             $fields = [];
             $casts  = [];
             $fks    = [];
+            $hasId  = preg_match('/\$table->(?:id|increments|bigIncrements)\s*\(/i', $code) === 1;
 
             // Colonnes
             $pattern = '/\$table->([a-zA-Z_]+)\(\s*[\'"]([^\'"]+)[\'"]\s*(?:,\s*([0-9]+))?\s*\)([^;]*);/m';
@@ -181,9 +199,9 @@ class MakeApiCollection extends Command
                     [, $method, $col, $argLen, $chain] = $match + [null,null,null,null,null];
                     if (in_array($col, $skip, true)) continue;
 
-                    $type = $this->methodToSqlType(strtolower($method));
+                    $type = TypeMapper::methodToSqlType(strtolower($method));
                     $fields[] = $col;
-                    $casts[$col] = $this->sqlTypeToCast($type);
+                    $casts[$col] = TypeMapper::sqlTypeToCast($type);
 
                     if ($method === 'foreignId') {
                         $refTable = $this->extractConstrainedTable($chain) ?: Str::plural(Str::beforeLast($col, '_id'));
@@ -192,7 +210,7 @@ class MakeApiCollection extends Command
                 }
             }
 
-            $maybePivot = $this->isPivotTableGuess($table, $fields, $fks);
+            $maybePivot = $this->isPivotTableGuess($table, $fields, $fks, $hasId);
             if ($skipPivots && $maybePivot) {
                 $this->line("↷ Ignoré (pivot présumé) : {$table}");
                 continue;
@@ -293,48 +311,18 @@ class MakeApiCollection extends Command
         $skip = ['id','created_at','updated_at','deleted_at'];
         $fields = [];
         $casts  = [];
+        $hasId  = false;
         foreach ($cols as $c) {
             $name = (string)$c->COLUMN_NAME;
+            if ($name === 'id') $hasId = true;
             if (in_array($name, $skip, true)) continue;
             $type = strtolower((string)$c->DATA_TYPE);
             $ctype = (string)($c->COLUMN_TYPE ?? '');
             $fields[] = $name;
-            $casts[$name] = $this->sqlTypeToCast($type);
+            $casts[$name] = TypeMapper::sqlTypeToCast($type);
             // enum mysql => cast string (déjà), pas besoin de plus ici
         }
-        return [$fields, $casts];
-    }
-
-    private function sqlTypeToCast(string $type): string
-    {
-        return match (true) {
-            str_contains($type, 'int')         => 'integer',
-            str_contains($type, 'bool')        => 'boolean',
-            in_array($type, ['decimal','numeric','double','float'], true) => 'float',
-            in_array($type, ['json','jsonb'], true) => 'array',
-            $type === 'date'                   => 'date',
-            str_contains($type, 'time') || str_contains($type, 'date') => 'datetime',
-            default                            => 'string',
-        };
-    }
-
-    private function methodToSqlType(string $method): string
-    {
-        return match ($method) {
-            'string','char' => 'varchar',
-            'text','mediumtext','longtext' => 'text',
-            'integer','tinyinteger','smallinteger','mediuminteger' => 'int',
-            'biginteger','foreignid' => 'bigint',
-            'boolean' => 'boolean',
-            'date' => 'date',
-            'datetime','datetimetz' => 'datetime',
-            'timestamp','timestamptz' => 'timestamp',
-            'json','jsonb' => 'json',
-            'decimal' => 'decimal',
-            'float','double' => 'double',
-            'enum' => 'enum',
-            default => 'varchar',
-        };
+        return [$fields, $casts, $hasId];
     }
 
     private function extractConstrainedTable(string $chain): ?string
@@ -345,13 +333,12 @@ class MakeApiCollection extends Command
         return null;
     }
 
-    private function isPivotTableGuess(string $table, array $fields, array $fks): bool
+    private function isPivotTableGuess(string $table, array $fields, array $fks, bool $hasId): bool
     {
         // Heuristique : pas d'id, que des *_id, 2 FKs minimum, aucune autre colonne "métier"
-        $noId = !in_array('id', $fields, true);
         $fkCount = count($fks);
         $nonFk = array_diff($fields, array_keys($fks));
-        return $noId && $fkCount >= 2 && count($nonFk) === 0;
+        return !$hasId && $fkCount >= 2 && count($nonFk) === 0;
     }
 
     private function sampleJson(array $fields, array $casts, array $fks): array
