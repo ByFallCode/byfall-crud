@@ -11,10 +11,14 @@
   ],
   "require": {
     "php": "^8.2",
+    "illuminate/auth": "^12.69.2 || ^13.32.0",
     "illuminate/console": "^12.69.2 || ^13.32.0",
     "illuminate/database": "^12.69.2 || ^13.32.0",
     "illuminate/filesystem": "^12.69.2 || ^13.32.0",
-    "illuminate/support": "^12.69.2 || ^13.32.0"
+    "illuminate/http": "^12.69.2 || ^13.32.0",
+    "illuminate/pagination": "^12.69.2 || ^13.32.0",
+    "illuminate/support": "^12.69.2 || ^13.32.0",
+    "illuminate/validation": "^12.69.2 || ^13.32.0"
   },
   "require-dev": {
     "orchestra/testbench": "^10.12 || ^11.3",

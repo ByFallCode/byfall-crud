@@ -124,6 +124,65 @@ Intentional V2-L04 output changes are limited to the four Smart Generator artifa
 No historical snapshot required an update. Controller output and all out-of-scope
 legacy artifacts retain their characterized behavior.
 
+## API Foundation
+
+V2-L05 defines a small, predictable HTTP contract without changing generated
+controllers yet:
+
+```text
+Request -> ForceJsonResponse -> Laravel -> ApiResponse
+Exception -> ApiExceptionRenderer -> ApiResponse
+```
+
+`ForceJsonResponse` changes the `Accept` header only for `api/*` requests so Laravel
+correctly selects JSON validation and exception behavior. It never overwrites a
+response `Content-Type`; a plain-text or HTML response is therefore never mislabeled
+as JSON. Web requests are left untouched.
+
+`ApiResponse` provides `success`, `created`, `noContent`, `error` and `paginated`.
+Success payloads contain `success`, `message`, `data` and optional `meta`. Errors
+contain `success`, `message`, a centralized `ApiErrorCode`, and optional `errors`.
+A 204 response has an empty body. Pagination exposes stable scalar metadata and
+keeps navigational URLs in a separate `links` object:
+
+```text
+meta: current_page, per_page, last_page, total, from, to
+links: first, last, prev, next
+```
+
+`ApiExceptionRenderer` maps Laravel validation, authentication, authorization,
+model-not-found and throttle exceptions plus Symfony endpoint and method exceptions.
+Rate-limit headers are preserved. It returns `null` for non-API requests so Laravel's
+normal web exception flow remains responsible. Unexpected production errors expose
+only `INTERNAL_SERVER_ERROR`; messages, stack traces, paths, SQL and other internal
+details are omitted. Debug behavior is controlled by an explicit boolean intended to
+come from `config('app.debug')`, never from `APP_ENV` alone, and still excludes stack,
+file and line data.
+
+### Installation decision
+
+Two approaches were evaluated. Automatic runtime registration from the package is
+simple but silently couples every generated application to Byfall CRUD and can alter
+unrelated HTTP behavior. Rewriting `bootstrap/app.php` automatically would be brittle
+across valid Laravel 12/13 application customizations. V2-L05 therefore chooses the
+limited internal-infrastructure option:
+
+- the foundation is implemented and tested in the package but is not globally
+  registered by its service provider;
+- `bootstrap/app.php` is not modified;
+- no configuration file is introduced because the API prefix, debug flag and
+  pagination values already have clear Laravel sources;
+- a future installer may publish equivalent standard Laravel classes into `App\...`
+  and add an explicit, structure-aware bootstrap integration.
+
+There is no automated installation operation in L05, so there is no repeatable write
+that could duplicate middleware or exception hooks. Idempotence becomes mandatory
+when the public installer is introduced. Until then, consumers integrating the
+foundation manually must register `ForceJsonResponse` for the API middleware group
+and delegate API render callbacks to `ApiExceptionRenderer`, passing
+`(bool) config('app.debug')`. This choice is explicit and avoids claiming that a
+fragile bootstrap rewrite is safe.
+
 ## Metadata roles
 
 - `EntityMetadata` is the normalized entity boundary. In V2-L01 it carries every
