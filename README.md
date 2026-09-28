@@ -22,7 +22,7 @@ It helps you rapidly scaffold:
 | Laravel | PHP | Status |
 |---|---|---|
 | 12 | 8.2–8.5 | Supported and verified by CI |
-| 13 | 8.3–8.5 | Declared; support is confirmed only after the V2 CI matrix succeeds |
+| 13 | 8.3–8.5 | Supported and verified by CI |
 
 ### Legacy / unsupported
 
@@ -56,7 +56,7 @@ Compatibility is claimed only for combinations that complete the full CI job.
 ## 📋 Requirements
 
 - Laravel 12 with PHP 8.2–8.5
-- Laravel 13 with PHP 8.3–8.5, once the corresponding CI jobs are verified
+- Laravel 13 with PHP 8.3–8.5
 
 ---
 

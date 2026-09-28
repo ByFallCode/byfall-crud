@@ -68,6 +68,10 @@ The target matrix is:
 | 12 | 8.2 |
 | 13 | 8.3 |
 
+The V2-L01 compatibility workflow verified Laravel 12 on PHP 8.2 and Laravel 13
+on PHP 8.3 and PHP 8.5. Each job resolved its dependencies independently, passed
+the platform check and completed the full 30-test suite.
+
 Support claims must be backed by CI or an explicitly recorded local test. Existing
 commands and options remain compatible. A behavior change requires a documented
 bug fix, an opt-in profile, or a migration path.
