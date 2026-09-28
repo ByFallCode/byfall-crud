@@ -9,5 +9,6 @@ final class ForeignKeyMetadata
         public readonly string $column,
         public readonly string $referencedTable,
         public readonly string $referencedColumn = 'id',
+        public readonly ?string $constraintName = null,
     ) {}
 }

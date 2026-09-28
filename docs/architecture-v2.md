@@ -19,8 +19,35 @@ inspecting the source independently.
 Database / migrations -> SchemaAnalyzer -> EntityMetadata -> generators
 ```
 
-The SchemaAnalyzer itself is intentionally deferred to V2-L02. V2-L01 introduces
-the metadata boundary and characterizes the historical behavior first.
+V2-L01 introduced the metadata boundary and characterized historical behavior.
+V2-L02 implements the analyzer pipeline described below.
+
+## Smart Core schema pipeline
+
+`SchemaSource` is the acquisition boundary. `DatabaseSchemaSource` selects one
+driver-specific inspector (`MySqlSchemaInspector` or `PostgreSqlSchemaInspector`),
+while `MigrationSchemaSource` preserves the supported historical migration syntax.
+Both produce native `EntityMetadata` objects.
+
+`EntitySchemaAnalyzer` is the single entry point used by `MakeEntity` and
+`MakeApiCollection`. Its command-scoped cache guarantees that the same identifier
+and source instance are inspected only once:
+
+```text
+Database connection -> driver inspector --+
+                                          +-> EntitySchemaAnalyzer -> EntityMetadata
+Migration file -> MigrationSchemaSource --+
+```
+
+The commands contain no SQL schema inspection and no migration parsing. Legacy
+generators still receive associative arrays through `LegacyMetadataAdapter`; those
+arrays are compatibility output, not the source of truth.
+
+Database inspectors preserve columns, database and normalized types, nullability,
+defaults when exposed by the engine, lengths and numeric dimensions, unsigned and
+generated flags, primary keys, foreign keys, unique constraints and indexes.
+Composite unique constraints remain grouped. Migration parsing deliberately rejects
+recognized unsupported constructs instead of silently inventing metadata.
 
 ## Metadata roles
 

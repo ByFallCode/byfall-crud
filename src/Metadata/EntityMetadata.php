@@ -23,7 +23,7 @@ final class EntityMetadata
     public function __construct(
         public readonly string $name,
         public readonly string $table,
-        public readonly string $primaryKey = 'id',
+        public readonly ?string $primaryKey = 'id',
         public readonly array $columns = [],
         public readonly array $relationships = [],
         public readonly array $indexes = [],
