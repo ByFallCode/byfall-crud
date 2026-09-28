@@ -57,28 +57,36 @@ preserves the historical mapping results. Type improvements belong to later lots
 
 ## Compatibility policy
 
+Byfall CRUD V2 targets Laravel versions that remain under official security
+maintenance. Older versions may continue to work, but they are neither guaranteed
+nor tested by the V2 CI.
+
 The target matrix is:
 
 | Laravel | Minimum PHP |
 |---|---|
-| 10 | 8.1 |
-| 11 | 8.2 |
 | 12 | 8.2 |
+| 13 | 8.3 |
 
 Support claims must be backed by CI or an explicitly recorded local test. Existing
 commands and options remain compatible. A behavior change requires a documented
 bug fix, an opt-in profile, or a migration path.
 
-Composer declares all three Laravel branches. Compatibility is tested separately
-from that declaration. The GitHub Actions workflow resolves every matrix entry from
+Composer explicitly declares Laravel 12 and 13; it does not implicitly claim future
+Laravel majors. Laravel 10 and 11 are legacy and unsupported by the V2 policy because
+their official security-support windows have ended and affected dependency
+resolutions are blocked by Composer security advisories. This is not a package bug,
+and the CI does not disable Composer's security protections.
+
+Compatibility is tested separately from the Composer declaration. The GitHub Actions workflow resolves every matrix entry from
 its own PHP runtime after removing the development lock's `config.platform.php`
 override inside the ephemeral job only. It then reports installed versions, checks
 platform requirements and runs the complete suite. Adding the workflow does not by
 itself prove that a matrix entry passes; only an observed successful CI run does.
 
-At the end of V2-L01 local validation, source linting was performed with PHP 8.4.
-The development lock was resolved for PHP 8.2 and Laravel 12, but this does not
-constitute execution proof for PHP 8.1, PHP 8.2, Laravel 10 or Laravel 11.
+The development lock is resolved for PHP 8.2 and Laravel 12. It is useful for local
+reproducibility but does not constitute execution proof for another PHP or Laravel
+combination.
 
 ## Laravel first
 

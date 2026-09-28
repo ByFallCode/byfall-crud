@@ -16,18 +16,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - laravel: '10'
-            php: '8.1'
-            testbench: '^8.0'
-            phpunit: '^10.5'
-          - laravel: '11'
-            php: '8.2'
-            testbench: '^9.0'
-            phpunit: '^11.5'
           - laravel: '12'
             php: '8.2'
-            testbench: '^10.0'
-            phpunit: '^11.5'
+            framework: '^12.69.2'
+            testbench: '^10.12'
+            phpunit: '^11.5.50'
+          - laravel: '13'
+            php: '8.3'
+            framework: '^13.32.0'
+            testbench: '^11.3'
+            phpunit: '^12.5.8'
+          - laravel: '13'
+            php: '8.5'
+            framework: '^13.32.0'
+            testbench: '^11.3'
+            phpunit: '^12.5.8'
 
     steps:
       - name: Checkout
@@ -52,6 +55,7 @@ jobs:
             exit 1
           fi
           composer require --dev --no-update \
+            "laravel/framework:${{ matrix.framework }}" \
             "orchestra/testbench:${{ matrix.testbench }}" \
             "phpunit/phpunit:${{ matrix.phpunit }}"
 

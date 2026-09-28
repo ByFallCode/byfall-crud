@@ -13,14 +13,28 @@ It helps you rapidly scaffold:
 - Seeders
 - Postman API collections (JSON)
 
-> Compatibility: Laravel 10 requires PHP 8.1+; Laravel 11 and 12 require PHP 8.2+.
 > Byfall CRUD V2 is being developed incrementally without breaking the historical commands.
 
-The Composer constraints declare support for Laravel 10, 11 and 12. The repository
-contains a GitHub Actions matrix for Laravel 10/PHP 8.1, Laravel 11/PHP 8.2 and
-Laravel 12/PHP 8.2. These combinations must only be considered verified after the
-corresponding CI jobs have completed successfully. Local PHP linting on another PHP
-version is not a substitute for this compatibility matrix.
+## Compatibility
+
+### Officially supported
+
+| Laravel | PHP | Status |
+|---|---|---|
+| 12 | 8.2–8.5 | Supported and verified by CI |
+| 13 | 8.3–8.5 | Declared; support is confirmed only after the V2 CI matrix succeeds |
+
+### Legacy / unsupported
+
+| Laravel | Status |
+|---|---|
+| 10 | Legacy; not tested or guaranteed by the V2 CI |
+| 11 | Legacy; not tested or guaranteed by the V2 CI |
+
+Laravel 10 and 11 are outside their official security-support windows. Composer
+currently blocks affected dependency resolutions because of security advisories;
+this is not a Byfall CRUD defect and the security protection is not bypassed.
+Compatibility is claimed only for combinations that complete the full CI job.
 
 ---
 
@@ -35,14 +49,14 @@ version is not a substitute for this compatibility matrix.
 - 🌱 Factories and Seeders
 - 📬 Postman collection generation
 - 🧹 Safe deletion of generated files
-- 🔮 Forward-compatible with future Laravel versions
+- 🔮 Explicit compatibility with the Laravel majors verified by CI
 
 ---
 
 ## 📋 Requirements
 
-- Laravel 10 with PHP >= 8.1
-- Laravel 11 or 12 with PHP >= 8.2
+- Laravel 12 with PHP 8.2–8.5
+- Laravel 13 with PHP 8.3–8.5, once the corresponding CI jobs are verified
 
 ---
 
