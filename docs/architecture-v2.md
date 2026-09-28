@@ -4,9 +4,11 @@
 
 Byfall CRUD exposes three historical Artisan commands. In V2, `MakeEntity` and
 `MakeApiCollection` share the Smart Core for schema observation and metadata
-inference; code rendering and file writes remain in the commands temporarily. The
-migration is incremental: existing commands and generated Laravel code remain the
-public contract while internal responsibilities move behind typed data.
+inference. Since V2-L04, model, form-request and resource rendering is delegated to
+focused Smart Generators; legacy repository, controller, factory, seeder, resource
+collection and Postman rendering remain in the command temporarily. The migration
+is incremental: existing commands and generated Laravel code remain the public
+contract while internal responsibilities move behind typed data.
 
 ## Smart Core objective
 
@@ -75,6 +77,52 @@ lightweight diagnostics rather than false rules. No HTTP behavior consumes query
 capabilities yet. `LegacyRuleBuilder` was removed: validation has one inference
 engine, while `LegacyMetadataAdapter` only translates enriched metadata for existing
 generators.
+
+## Smart Generators
+
+V2-L04 introduces a rendering boundary after Metadata Intelligence:
+
+```text
+Enriched EntityMetadata + GenerationContext
+                    -> Smart Generator -> PHP source -> SafeFileWriter -> application
+```
+
+`ModelGenerator`, `StoreRequestGenerator`, `UpdateRequestGenerator` and
+`ResourceGenerator` consume enriched metadata directly. They do not inspect a
+database, parse migrations or repeat inference. `GenerationContext` contains only
+generation facts that do not belong to the schema, including namespaces, entity
+name and an optional route parameter. The generators return source code and never
+write files themselves.
+
+The model renderer uses metadata for table, primary-key configuration, fillable,
+hidden, modern `casts()`, timestamps, soft deletes and reliable `belongsTo`
+relations. Ambiguous relations are deliberately skipped. Decimal casts retain their
+scale. Requests render the inferred store and update rules; simple unique updates
+use `Rule::unique()->ignore()` only when the caller supplies an explicit route
+parameter. Without that context, the generator does not guess one.
+
+Resources expose observed columns except those in `EntityMetadata.hidden`. Reliable
+relations use `whenLoaded()` and are returned without assuming that a related
+Resource class exists. This avoids implicit relationship loading and keeps generated
+code independent from Byfall CRUD at runtime.
+
+`SafeFileWriter` creates missing directories but refuses to replace an existing
+file unless the existing `--force` option is enabled. Dynamic PHP rendering remains
+programmatic: the conditional sections are clearer without a custom template engine
+or a large family of stubs. Repository, controller, factory, seeder, collection and
+Postman generation remain legacy and continue through `LegacyMetadataAdapter`.
+
+Intentional V2-L04 output changes are limited to the four Smart Generator artifacts:
+
+- models can now include hidden fields, precise casts, key/timestamp configuration,
+  soft deletes and reliable typed relationships;
+- request rules are rendered as readable arrays and update uniqueness uses Laravel's
+  structured `Rule` API with explicit route context;
+- resources exclude hidden columns and expose reliable relationships only through
+  `whenLoaded()`.
+
+No historical snapshot required an update. Controller output and all out-of-scope
+legacy artifacts retain their characterized behavior.
 
 ## Metadata roles
 
@@ -171,7 +219,7 @@ remain optional and be clearly documented.
 2. Introduce typed metadata and adapters.
 3. Extract database and migration schema sources in V2-L02.
 4. Add metadata intelligence without changing HTTP behavior (V2-L03).
-5. Move rendering into focused generators and stubs in a later lot.
+5. Move model, request and resource rendering into focused Smart Generators (V2-L04).
 6. Add optional API modules only after the core and generators are stable.
 
 This sequence avoids a big-bang rewrite and keeps each change reviewable.

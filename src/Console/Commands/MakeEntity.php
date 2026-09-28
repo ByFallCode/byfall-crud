@@ -5,6 +5,13 @@ namespace ByfallCode\ByfallCrud\Console\Commands;
 
 use ByfallCode\ByfallCrud\Metadata\LegacyMetadataAdapter;
 use ByfallCode\ByfallCrud\Inference\MetadataEnricher;
+use ByfallCode\ByfallCrud\Generation\GenerationContext;
+use ByfallCode\ByfallCrud\Generation\ModelGenerator;
+use ByfallCode\ByfallCrud\Generation\ResourceGenerator;
+use ByfallCode\ByfallCrud\Generation\StoreRequestGenerator;
+use ByfallCode\ByfallCrud\Generation\Support\SafeFileWriter;
+use ByfallCode\ByfallCrud\Generation\UpdateRequestGenerator;
+use ByfallCode\ByfallCrud\Metadata\EntityMetadata;
 use ByfallCode\ByfallCrud\Schema\Database\DatabaseSchemaSource;
 use ByfallCode\ByfallCrud\Schema\EntitySchemaAnalyzer;
 use ByfallCode\ByfallCrud\Schema\Migration\MigrationSchemaSource;
@@ -66,16 +73,19 @@ class MakeEntity extends Command
         }
 
         $meta = LegacyMetadataAdapter::toLegacy($metadata);
+        $context = new GenerationContext(
+            entityName: $name,
+            routeParameter: Str::snake(Str::singular($name)),
+        );
 
         // ---------- Génération ----------
         $withResources = !$this->option('no-resources');
-        $this->generateModel($name, $meta, $force);
+        $this->generateSmartArtifacts($metadata, $context, $force, $withResources);
         $this->generateRepository($name, $force);
-        $this->generateFormRequests($name, $meta, $force);
         $this->generateController($name, $force, $withResources);
 
         if ($withResources) {
-            $this->generateApiResources($name, $meta, $force);
+            $this->generateResourceCollection($name, $force);
         }
         if (!$this->option('no-factory')) {
             $this->generateFactory($name, $meta, $force);
@@ -98,62 +108,59 @@ class MakeEntity extends Command
     // ==================   GÉNÉRATION CODE   ==================
     // =========================================================
 
-    private function generateModel(string $name, array $meta, bool $force): void
+    private function generateSmartArtifacts(
+        EntityMetadata $metadata,
+        GenerationContext $context,
+        bool $force,
+        bool $withResource,
+    ): void
     {
-        $dir  = app_path('Models');
-        $path = $dir.DIRECTORY_SEPARATOR.$name.'.php';
-        if (!File::exists($dir)) File::makeDirectory($dir, 0755, true);
-        if (File::exists($path) && !$force) {
-            $this->warn("⚠️ Model existe déjà: app/Models/{$name}.php");
-            return;
+        $writer = new SafeFileWriter();
+        $this->writeSmartArtifact(
+            $writer,
+            app_path("Models/{$context->entityName}.php"),
+            (new ModelGenerator())->generate($metadata, $context),
+            $force,
+            "Model : app/Models/{$context->entityName}.php",
+        );
+        $requestDirectory = app_path("Http/Requests/{$context->entityName}");
+        $this->writeSmartArtifact(
+            $writer,
+            $requestDirectory."/Store{$context->entityName}Request.php",
+            (new StoreRequestGenerator())->generate($metadata, $context),
+            $force,
+            "StoreRequest : app/Http/Requests/{$context->entityName}/Store{$context->entityName}Request.php",
+        );
+        $this->writeSmartArtifact(
+            $writer,
+            $requestDirectory."/Update{$context->entityName}Request.php",
+            (new UpdateRequestGenerator())->generate($metadata, $context),
+            $force,
+            "UpdateRequest : app/Http/Requests/{$context->entityName}/Update{$context->entityName}Request.php",
+        );
+        if ($withResource) {
+            $this->writeSmartArtifact(
+                $writer,
+                app_path("Http/Resources/{$context->entityName}Resource.php"),
+                (new ResourceGenerator())->generate($metadata, $context),
+                $force,
+                "Resource : app/Http/Resources/{$context->entityName}Resource.php",
+            );
         }
-
-        $fillable = $this->exportArray($meta['fields'] ?? []);
-        $casts    = $this->exportAssocArray($meta['casts'] ?? []);
-        $softUse  = !empty($meta['soft_deletes']) ? "use Illuminate\\Database\\Eloquent\\SoftDeletes;\n" : '';
-        $soft     = !empty($meta['soft_deletes']) ? "    use SoftDeletes;\n" : '';
-
-        // belongsTo
-        $belongsMethods = '';
-        if (!empty($meta['foreign_keys'])) {
-            foreach ($meta['foreign_keys'] as $fkCol => $fk) {
-                $related = Str::studly(Str::singular($fk['table']));
-                $method  = Str::camel(Str::beforeLast($fkCol, '_id')) ?: Str::camel($related);
-                $belongsMethods .= <<<PHP
-
-    public function {$method}()
-    {
-        return \$this->belongsTo(\\App\\Models\\{$related}::class, '{$fkCol}');
     }
 
-PHP;
-            }
+    private function writeSmartArtifact(
+        SafeFileWriter $writer,
+        string $path,
+        string $content,
+        bool $force,
+        string $label,
+    ): void {
+        if ($writer->write($path, $content, $force)) {
+            $this->info("✅ {$label}");
+        } else {
+            $this->warn("⚠️ Fichier existe déjà: {$label}");
         }
-
-        $tableLine = "    protected \$table = '".($meta['table'] ?? Str::snake(Str::pluralStudly($name)))."';\n";
-
-        $stub = <<<PHP
-<?php
-declare(strict_types=1);
-
-namespace App\\Models;
-
-use Illuminate\\Database\\Eloquent\\Factories\\HasFactory;
-use Illuminate\\Database\\Eloquent\\Model;
-{$softUse}
-class {$name} extends Model
-{
-    use HasFactory;
-{$soft}
-{$tableLine}
-    protected \$fillable = {$fillable};
-
-    protected \$casts = {$casts};
-{$belongsMethods}}
-PHP;
-
-        File::put($path, $stub);
-        $this->info("✅ Model : app/Models/{$name}.php");
     }
 
     private function generateRepository(string $name, bool $force): void
@@ -217,116 +224,6 @@ PHP;
 
         File::put($path, $stub);
         $this->info("✅ Repository : app/Repositories/{$name}Repository.php");
-    }
-
-    private function generateFormRequests(string $name, array $meta, bool $force): void
-    {
-        $dir = app_path('Http/Requests/'.$name);
-        if (!File::exists($dir)) File::makeDirectory($dir, 0755, true);
-
-        $storeRulesStr  = $this->exportAssocArray($meta['rules_store']  ?? []);
-        // Update : on gèrera unique(ignore) dans la classe, donc on enlève unique de la chaîne
-        $updateRulesBase = $this->stripUniqueFromRules($meta['rules_update'] ?? []);
-
-        $this->writeStoreRequest($name, $storeRulesStr, $force);
-        $this->writeUpdateRequest($name, $meta['table'], $updateRulesBase, $meta['unique_fields'] ?? [], $force);
-    }
-
-    private function writeStoreRequest(string $name, string $rulesArray, bool $force): void
-    {
-        $class = "Store{$name}Request";
-        $path  = app_path("Http/Requests/{$name}/{$class}.php");
-        if (File::exists($path) && !$force) {
-            $this->warn("⚠️ FormRequest existe déjà: Http/Requests/{$name}/{$class}.php");
-            return;
-        }
-
-        $stub = <<<PHP
-<?php
-declare(strict_types=1);
-
-namespace App\\Http\\Requests\\{$name};
-
-use Illuminate\\Foundation\\Http\\FormRequest;
-
-class {$class} extends FormRequest
-{
-    public function authorize(): bool
-    {
-        return true;
-    }
-
-    public function rules(): array
-    {
-        return {$rulesArray};
-    }
-}
-
-PHP;
-        File::put($path, $stub);
-        $this->info("✅ StoreRequest : app/Http/Requests/{$name}/{$class}.php");
-    }
-
-    private function writeUpdateRequest(string $name, string $table, array $rulesBase, array $uniqueFields, bool $force): void
-    {
-        $class = "Update{$name}Request";
-        $path  = app_path("Http/Requests/{$name}/{$class}.php");
-        if (File::exists($path) && !$force) {
-            $this->warn("⚠️ FormRequest existe déjà: Http/Requests/{$name}/{$class}.php");
-            return;
-        }
-
-        $param = Str::snake(Str::singular($name)); // ex: 'campagne'
-        $lines = [];
-        foreach ($rulesBase as $field => $rulePipe) {
-            $parts = array_filter(explode('|', $rulePipe));
-            $php = implode("','", $parts);
-            $arr = empty($php) ? "" : "'{$php}', ";
-
-            if (in_array($field, $uniqueFields, true)) {
-                $lines[] = "            '{$field}' => [{$arr}\\Illuminate\\Validation\\Rule::unique('{$table}', '{$field}')->ignore(\$id)],";
-            } else {
-                $lines[] = "            '{$field}' => [{$arr}],";
-            }
-        }
-        $rulesBody = empty($lines) ? "" : "\n".implode("\n", $lines)."\n        ";
-
-        $stub = <<<PHP
-<?php
-declare(strict_types=1);
-
-namespace App\\Http\\Requests\\{$name};
-
-use Illuminate\\Foundation\\Http\\FormRequest;
-use Illuminate\\Validation\\Rule;
-
-class {$class} extends FormRequest
-{
-    public function authorize(): bool
-    {
-        return true;
-    }
-
-    public function rules(): array
-    {
-        \$id = \$this->route('{$param}');
-        return [{$rulesBody}];
-    }
-}
-
-PHP;
-        File::put($path, $stub);
-        $this->info("✅ UpdateRequest : app/Http/Requests/{$name}/{$class}.php");
-    }
-
-    private function stripUniqueFromRules(array $rules): array
-    {
-        $out = [];
-        foreach ($rules as $field => $pipe) {
-            $parts = array_filter(explode('|', $pipe), fn($p) => !str_starts_with($p, 'unique:'));
-            $out[$field] = implode('|', $parts);
-        }
-        return $out;
     }
 
     private function generateController(string $name, bool $force, bool $withResources): void
@@ -405,42 +302,12 @@ PHP;
     }
 
 
-    private function generateApiResources(string $name, array $meta, bool $force): void
+    private function generateResourceCollection(string $name, bool $force): void
     {
         $rDir = app_path('Http/Resources');
         if (!File::exists($rDir)) File::makeDirectory($rDir, 0755, true);
 
-        $resPath = $rDir.DIRECTORY_SEPARATOR.$name.'Resource.php';
         $colPath = $rDir.DIRECTORY_SEPARATOR.$name.'Collection.php';
-
-        $fields = $meta['fields'] ?? [];
-        $arrayBody = empty($fields)
-            ? "return parent::toArray(\$request);"
-            : "return [\n".implode("\n", array_map(fn($f)=>"            '{$f}' => \$this->{$f},", $fields))."\n        ];";
-
-        if (!File::exists($resPath) || $force) {
-            $resStub = <<<PHP
-<?php
-declare(strict_types=1);
-
-namespace App\\Http\\Resources;
-
-use Illuminate\\Http\\Resources\\Json\\JsonResource;
-
-class {$name}Resource extends JsonResource
-{
-    public function toArray(\$request): array
-    {
-        {$arrayBody}
-    }
-}
-
-PHP;
-            File::put($resPath, $resStub);
-            $this->info("✅ Resource : app/Http/Resources/{$name}Resource.php");
-        } else {
-            $this->warn("⚠️ Resource existe déjà: {$name}Resource.php");
-        }
 
         if (!File::exists($colPath) || $force) {
             $colStub = <<<PHP
@@ -637,21 +504,4 @@ PHP;
         return $out;
     }
 
-    private function exportArray(array $values): string
-    {
-        if (empty($values)) return '[]';
-        $items = array_map(fn($v) => "'".$v."'", $values);
-        return '['.implode(', ', $items).']';
-    }
-
-    /** @param array<string,string> $assoc */
-    private function exportAssocArray(array $assoc): string
-    {
-        if (empty($assoc)) return '[]';
-        $lines = [];
-        foreach ($assoc as $k => $v) {
-            $lines[] = "        '{$k}' => '{$v}',";
-        }
-        return "[\n".implode("\n", $lines)."\n    ]";
-    }
 }
