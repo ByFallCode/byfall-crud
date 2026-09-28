@@ -8,7 +8,6 @@ use ByfallCode\ByfallCrud\Metadata\EntityMetadata;
 use ByfallCode\ByfallCrud\Metadata\ForeignKeyMetadata;
 use ByfallCode\ByfallCrud\Metadata\IndexMetadata;
 use ByfallCode\ByfallCrud\Metadata\UniqueConstraintMetadata;
-use ByfallCode\ByfallCrud\Schema\LegacyRuleBuilder;
 use ByfallCode\ByfallCrud\Support\TypeMapper;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Str;
@@ -67,10 +66,6 @@ abstract class AbstractDatabaseSchemaInspector implements DatabaseSchemaInspecto
         }
 
         $columns = [];
-        $fillable = [];
-        $casts = [];
-        $storeRules = [];
-        $updateRules = [];
         $softDeletes = false;
         $hasCreatedAt = false;
         $hasUpdatedAt = false;
@@ -87,7 +82,7 @@ abstract class AbstractDatabaseSchemaInspector implements DatabaseSchemaInspecto
             $column = new ColumnMetadata(
                 name: $name,
                 databaseType: $databaseType,
-                normalizedType: TypeMapper::sqlTypeToCast($databaseType),
+                normalizedType: TypeMapper::sqlTypeToNormalizedType($databaseType),
                 nullable: strtoupper((string) ($row['is_nullable'] ?? 'NO')) === 'YES',
                 defaultValue: $defaultValue,
                 hasDefault: $defaultPresent,
@@ -105,12 +100,6 @@ abstract class AbstractDatabaseSchemaInspector implements DatabaseSchemaInspecto
             if ($name === 'deleted_at') $softDeletes = true;
             if ($name === 'created_at') $hasCreatedAt = true;
             if ($name === 'updated_at') $hasUpdatedAt = true;
-            if (!in_array($name, ['id', 'created_at', 'updated_at', 'deleted_at'], true) && !$primary) {
-                $fillable[] = $name;
-                $casts[$name] = $column->normalizedType;
-                $enumValues = $this->enumValues($columnType);
-                [$storeRules[$name], $updateRules[$name]] = LegacyRuleBuilder::forColumn($table, $column, $enumValues);
-            }
         }
 
         $primaryKey = $primaryColumns[0] ?? null;
@@ -127,18 +116,6 @@ abstract class AbstractDatabaseSchemaInspector implements DatabaseSchemaInspecto
             uniqueConstraints: $uniqueConstraints,
             timestamps: $hasCreatedAt && $hasUpdatedAt,
             softDeletes: $softDeletes,
-            fillable: $fillable,
-            casts: $casts,
-            storeRules: $storeRules,
-            updateRules: $updateRules,
         );
-    }
-
-    /** @return list<string> */
-    private function enumValues(string $columnType): array
-    {
-        if (!preg_match('/^enum\((.*)\)$/i', $columnType, $match)) return [];
-        preg_match_all("/'([^']+)'/", $match[1], $values);
-        return $values[1] ?? [];
     }
 }

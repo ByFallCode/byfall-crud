@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace ByfallCode\ByfallCrud\Console\Commands;
 
 use ByfallCode\ByfallCrud\Metadata\LegacyMetadataAdapter;
+use ByfallCode\ByfallCrud\Inference\MetadataEnricher;
 use ByfallCode\ByfallCrud\Schema\Database\DatabaseSchemaSource;
 use ByfallCode\ByfallCrud\Schema\EntitySchemaAnalyzer;
 use ByfallCode\ByfallCrud\Schema\Migration\MigrationSchemaSource;
@@ -40,7 +41,7 @@ class MakeEntity extends Command
         try {
             $analyzer = new EntitySchemaAnalyzer();
             if ($source === 'db') {
-                $metadata = $analyzer->analyze(new DatabaseSchemaSource(DB::connection()), $table, $name);
+                $metadata = (new MetadataEnricher())->enrich($analyzer->analyze(new DatabaseSchemaSource(DB::connection()), $table, $name));
                 $this->info("📦 Inférence DB réussie : {$table}");
             } elseif ($source === 'migration') {
                 $migration = (string) $this->option('migration');
@@ -48,7 +49,7 @@ class MakeEntity extends Command
                     $this->error('--migration est requis et doit exister.');
                     return self::FAILURE;
                 }
-                $metadata = $analyzer->analyze(new MigrationSchemaSource(app(Filesystem::class)), $migration, $name);
+                $metadata = (new MetadataEnricher())->enrich($analyzer->analyze(new MigrationSchemaSource(app(Filesystem::class)), $migration, $name));
                 $this->info("Inférence migration OK: table={$metadata->table}");
             } else {
                 $this->error("--source doit être 'db' ou 'migration'.");

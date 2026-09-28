@@ -9,7 +9,6 @@ use ByfallCode\ByfallCrud\Metadata\EntityMetadata;
 use ByfallCode\ByfallCrud\Metadata\ForeignKeyMetadata;
 use ByfallCode\ByfallCrud\Metadata\IndexMetadata;
 use ByfallCode\ByfallCrud\Metadata\UniqueConstraintMetadata;
-use ByfallCode\ByfallCrud\Schema\LegacyRuleBuilder;
 use ByfallCode\ByfallCrud\Support\TypeMapper;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -77,7 +76,7 @@ final class MigrationSchemaSource implements SchemaSource
                 $column = new ColumnMetadata(
                     name: $name,
                     databaseType: $databaseType,
-                    normalizedType: TypeMapper::sqlTypeToCast($databaseType),
+                    normalizedType: TypeMapper::sqlTypeToNormalizedType($databaseType),
                     nullable: str_contains($chain, '->nullable()'),
                     defaultValue: $defaultValue,
                     hasDefault: $hasDefault,
@@ -119,17 +118,6 @@ final class MigrationSchemaSource implements SchemaSource
         $softDeletes = str_contains($code, '->softDeletes(') || str_contains($code, '->softDeletesTz(');
         if ($softDeletes) $columns[] = new ColumnMetadata('deleted_at', 'timestamp', 'datetime', nullable: true);
 
-        $fillable = [];
-        $casts = [];
-        $storeRules = [];
-        $updateRules = [];
-        foreach ($columns as $column) {
-            if (in_array($column->name, ['id', 'created_at', 'updated_at', 'deleted_at'], true) || $column->primary) continue;
-            $fillable[] = $column->name;
-            $casts[$column->name] = $column->normalizedType;
-            [$storeRules[$column->name], $updateRules[$column->name]] = LegacyRuleBuilder::forColumn($table, $column);
-        }
-
         return new EntityMetadata(
             name: $entityName !== '' ? $entityName : Str::studly(Str::singular($table)),
             table: $table,
@@ -139,10 +127,6 @@ final class MigrationSchemaSource implements SchemaSource
             uniqueConstraints: $uniqueConstraints,
             timestamps: str_contains($code, '->timestamps(') || str_contains($code, '->timestampsTz('),
             softDeletes: $softDeletes,
-            fillable: array_values(array_unique($fillable)),
-            casts: $casts,
-            storeRules: $storeRules,
-            updateRules: $updateRules,
         );
     }
 

@@ -39,4 +39,23 @@ final class TypeMapper
             default => 'string',
         };
     }
+
+    public static function sqlTypeToNormalizedType(string $type): string
+    {
+        $type = strtolower($type);
+
+        return match (true) {
+            $type === 'enum' => 'enum',
+            str_contains($type, 'int') => 'integer',
+            str_contains($type, 'bool') => 'boolean',
+            in_array($type, ['decimal', 'numeric'], true) => 'decimal',
+            in_array($type, ['double', 'float', 'real'], true) => 'float',
+            in_array($type, ['json', 'jsonb'], true) => 'array',
+            $type === 'date' => 'date',
+            str_contains($type, 'time') || str_contains($type, 'date') => 'datetime',
+            str_contains($type, 'text') => 'text',
+            str_contains($type, 'binary') || str_contains($type, 'blob') => 'binary',
+            default => 'string',
+        };
+    }
 }

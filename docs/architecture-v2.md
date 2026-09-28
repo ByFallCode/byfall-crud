@@ -2,11 +2,11 @@
 
 ## Current architecture
 
-Byfall CRUD V1 exposes three Artisan commands. `MakeEntity` currently owns schema
-inspection, metadata inference, code rendering and file writes. `MakeApiCollection`
-contains a second, partially duplicated schema inspection implementation. The V2
+Byfall CRUD exposes three historical Artisan commands. In V2, `MakeEntity` and
+`MakeApiCollection` share the Smart Core for schema observation and metadata
+inference; code rendering and file writes remain in the commands temporarily. The
 migration is incremental: existing commands and generated Laravel code remain the
-public contract while internal responsibilities are extracted behind typed data.
+public contract while internal responsibilities move behind typed data.
 
 ## Smart Core objective
 
@@ -49,6 +49,33 @@ generated flags, primary keys, foreign keys, unique constraints and indexes.
 Composite unique constraints remain grouped. Migration parsing deliberately rejects
 recognized unsupported constructs instead of silently inventing metadata.
 
+## Metadata Intelligence
+
+V2-L03 makes the separation between observation and decisions explicit:
+
+```text
+Schema facts -> raw EntityMetadata -> MetadataEnricher -> enriched EntityMetadata -> generation
+```
+
+Schema sources populate only immutable facts. `MetadataEnricher` returns a new
+`EntityMetadata`; raw values are never mutated. Its order is explicit: fillable and
+relationships are inferred first, validation consumes the fillable decision, query
+capabilities consume reliable relationships, and all results are copied into the
+enriched value.
+
+- `CastInferrer` selects Laravel casts and keeps decimals precise with `decimal:n`.
+- `FillableInferrer` excludes engine-managed fields without confusing writable and hidden.
+- `SensitiveFieldPolicy` and `HiddenFieldInferrer` classify explicit secret conventions.
+- `ValidationRuleInferrer` handles defaults, nullability, simple uniqueness and real FKs.
+- `RelationshipInferrer` creates only `belongsTo` metadata backed by real constraints.
+- `QueryCapabilityInferrer` conservatively proposes search, filter, sort and include fields.
+
+Composite uniqueness and ambiguous relationship names remain represented and emit
+lightweight diagnostics rather than false rules. No HTTP behavior consumes query
+capabilities yet. `LegacyRuleBuilder` was removed: validation has one inference
+engine, while `LegacyMetadataAdapter` only translates enriched metadata for existing
+generators.
+
 ## Metadata roles
 
 - `EntityMetadata` is the normalized entity boundary. In V2-L01 it carries every
@@ -78,9 +105,10 @@ analyzer work can proceed without rewriting all generators at once.
 
 ## TypeMapper
 
-`TypeMapper` centralizes Blueprint-method-to-SQL and SQL-to-Eloquent-cast mappings
-that were duplicated by `MakeEntity` and `MakeApiCollection`. V2-L01 deliberately
-preserves the historical mapping results. Type improvements belong to later lots.
+`TypeMapper` centralizes Blueprint-method-to-SQL and SQL-type normalization.
+`CastInferrer` separately decides Laravel casts. The historical `sqlTypeToCast`
+method remains only for backwards-compatible callers and tests; schema sources no
+longer use it as their normalized type.
 
 ## Compatibility policy
 
@@ -142,7 +170,8 @@ remain optional and be clearly documented.
 1. Characterize V1 output and fix only approved critical bugs.
 2. Introduce typed metadata and adapters.
 3. Extract database and migration schema sources in V2-L02.
-4. Move rendering into focused generators and stubs.
-5. Add richer inference and optional API modules only after the core is stable.
+4. Add metadata intelligence without changing HTTP behavior (V2-L03).
+5. Move rendering into focused generators and stubs in a later lot.
+6. Add optional API modules only after the core and generators are stable.
 
 This sequence avoids a big-bang rewrite and keeps each change reviewable.

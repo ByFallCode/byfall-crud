@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace ByfallCode\ByfallCrud\Console\Commands;
 
 use ByfallCode\ByfallCrud\Metadata\EntityMetadata;
+use ByfallCode\ByfallCrud\Inference\MetadataEnricher;
 use ByfallCode\ByfallCrud\Schema\Database\DatabaseSchemaSource;
 use ByfallCode\ByfallCrud\Schema\EntitySchemaAnalyzer;
 use ByfallCode\ByfallCrud\Schema\Migration\MigrationSchemaSource;
@@ -81,7 +82,7 @@ class MakeApiCollection extends Command
         $result = [];
         foreach ($source->tables() as $table) {
             if ($this->filtered($table, $only, $except)) continue;
-            $result[$table] = $analyzer->analyze($source, $table);
+            $result[$table] = (new MetadataEnricher())->enrich($analyzer->analyze($source, $table));
         }
         return $result;
     }
@@ -94,7 +95,7 @@ class MakeApiCollection extends Command
         $result = [];
         foreach ($source->migrationFiles($directory ?: base_path('database/migrations')) as $table => $file) {
             if ($this->filtered($table, $only, $except)) continue;
-            $result[$table] = $analyzer->analyze($source, $file);
+            $result[$table] = (new MetadataEnricher())->enrich($analyzer->analyze($source, $file));
         }
         return $result;
     }
