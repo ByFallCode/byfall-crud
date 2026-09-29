@@ -45,6 +45,7 @@ Compatibility is claimed only for combinations that complete the full CI job.
 - 🗄️ Source from **database** or **migration files**
 - 🧪 Ready-to-use FormRequests (store & update)
 - 🧱 Repository pattern
+- 🔎 Allowlisted search, filters, sorting, includes and pagination
 - 📦 API Resources & Collections
 - 🌱 Factories and Seeders
 - 📬 Postman collection generation
@@ -182,6 +183,27 @@ After generating an entity, register the API route manually:
 
 `use App\Http\Controllers\CategoryController;  Route::apiResource('categories', CategoryController::class);`
 
+### Safe query API
+
+When the API foundation is installed, `make:entity` generates autonomous query
+classes under `App\Queries`. Their allowlists come exclusively from the inferred
+entity metadata; request input can never select an arbitrary SQL column.
+
+```http
+GET /api/products?search=phone&category_id=4&active=true&sort=price&direction=desc&include=category&per_page=20
+```
+
+- `search` applies a bound `LIKE` value to searchable columns. Case sensitivity is
+  determined by the database collation; no database-specific `ILIKE` is emitted.
+- simple filters are accepted only for filterable columns. Boolean filters accept
+  `true`, `false`, `1`, or `0`.
+- `sort` must name a sortable column and `direction` must be `asc` or `desc`.
+- `include` is a comma-separated list of explicitly allowed, non-nested relations.
+- `per_page` defaults to 15 and is constrained to 1–100.
+
+Unknown columns, unsupported includes, invalid booleans and unsafe sort values are
+ignored. Pagination links retain only the normalized, accepted query parameters.
+
 * * *
 
 ## 🧹 delete:entity — Usage
@@ -201,6 +223,8 @@ This command removes:
 -   Model
 
 -   Repository
+
+-   Query specification, parser and applier
 
 -   Controller
 

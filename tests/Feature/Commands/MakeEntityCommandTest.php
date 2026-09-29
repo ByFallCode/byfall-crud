@@ -132,4 +132,42 @@ final class MakeEntityCommandTest extends TestCase
             File::delete($foundation);
         }
     }
+
+    public function test_no_resources_with_foundation_keeps_the_safe_query_pipeline_valid(): void
+    {
+        $foundation = app_path('Support/ApiResponse.php');
+        File::ensureDirectoryExists(dirname($foundation));
+        File::put($foundation, '<?php // installed API Foundation fixture');
+        try {
+            $this->artisan('make:entity', [
+                'name' => 'Category',
+                '--source' => 'migration',
+                '--migration' => $this->fixtureMigration(),
+                '--no-resources' => true,
+                '--no-factory' => true,
+                '--no-seeder' => true,
+                '--no-collection-json' => true,
+            ])->assertExitCode(0);
+
+            self::assertFileDoesNotExist(app_path('Http/Resources/CategoryResource.php'));
+            foreach ([
+                app_path('Queries/CategoryQuerySpecification.php'),
+                app_path('Queries/CategoryQueryParser.php'),
+                app_path('Queries/CategoryQueryApplier.php'),
+                app_path('Repositories/CategoryRepository.php'),
+                app_path('Http/Controllers/CategoryController.php'),
+            ] as $file) {
+                self::assertFileExists($file);
+                $process = new Process([PHP_BINARY, '-l', $file]);
+                $process->run();
+                self::assertSame(0, $process->getExitCode(), $process->getErrorOutput().$process->getOutput());
+            }
+
+            $controller = File::get(app_path('Http/Controllers/CategoryController.php'));
+            self::assertStringContainsString('CategoryQueryParser', $controller);
+            self::assertStringNotContainsString('CategoryResource', $controller);
+        } finally {
+            File::delete($foundation);
+        }
+    }
 }

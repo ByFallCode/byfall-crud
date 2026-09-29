@@ -215,6 +215,35 @@ is absent, `make:entity` emits an explicit warning and generates the characteriz
 legacy controller instead of producing a broken class. Search, filtering, sorting
 and includes remain outside L06.
 
+## V2-L07 safe query pipeline
+
+V2-L07 turns the query capabilities inferred in L03 into generated application
+code. The request crosses explicit boundaries:
+
+```text
+Request -> EntityQueryParser -> EntityQuerySpecification
+        -> EntityQueryApplier -> Eloquent Builder -> Paginator
+```
+
+The generated parser contains only the `filterable`, `sortable` and
+`allowedIncludes` allowlists from `EntityMetadata`; the applier contains only its
+`searchable` allowlist. Reserved transport parameters cannot become column
+filters. User values are passed through Eloquent bindings, sorting is limited to
+an exact allowlist and `asc`/`desc`, nested includes are rejected unless they are
+explicitly present in metadata, and pagination is bounded to 1–100.
+
+The controller translates HTTP input into a specification and delegates. The
+repository receives no `Request`; it applies the specification and preserves its
+normalized parameters on paginator links. The existing find/create/update/delete
+contract remains intact. Generated `App\Queries` and repository classes have no
+runtime reference to this package.
+
+Invalid and unknown query capabilities are safely ignored in L07. This policy
+keeps the installed L05/L06 API foundation stable; it does not add a new global
+error code or silently upgrade previously installed application files. Search
+uses portable bound `LIKE` expressions, whose case sensitivity follows the
+configured database collation.
+
 ## Metadata roles
 
 - `EntityMetadata` is the normalized entity boundary. In V2-L01 it carries every
@@ -311,6 +340,8 @@ remain optional and be clearly documented.
 3. Extract database and migration schema sources in V2-L02.
 4. Add metadata intelligence without changing HTTP behavior (V2-L03).
 5. Move model, request and resource rendering into focused Smart Generators (V2-L04).
-6. Add optional API modules only after the core and generators are stable.
+6. Install the API foundation and emit thin smart controllers (V2-L05/L06).
+7. Generate the allowlisted query specification pipeline (V2-L07).
+8. Add later API modules only in their explicitly assigned lots.
 
 This sequence avoids a big-bang rewrite and keeps each change reviewable.

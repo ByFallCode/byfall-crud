@@ -8,6 +8,10 @@ use ByfallCode\ByfallCrud\Inference\MetadataEnricher;
 use ByfallCode\ByfallCrud\Generation\GenerationContext;
 use ByfallCode\ByfallCrud\Generation\ControllerGenerator;
 use ByfallCode\ByfallCrud\Generation\ModelGenerator;
+use ByfallCode\ByfallCrud\Generation\QueryApplierGenerator;
+use ByfallCode\ByfallCrud\Generation\QueryParserGenerator;
+use ByfallCode\ByfallCrud\Generation\QuerySpecificationGenerator;
+use ByfallCode\ByfallCrud\Generation\RepositoryGenerator;
 use ByfallCode\ByfallCrud\Generation\ResourceGenerator;
 use ByfallCode\ByfallCrud\Generation\StoreRequestGenerator;
 use ByfallCode\ByfallCrud\Generation\Support\SafeFileWriter;
@@ -83,7 +87,7 @@ class MakeEntity extends Command
 
         // ---------- Génération ----------
         $this->generateSmartArtifacts($metadata, $context, $force, $withResources);
-        $this->generateRepository($name, $force);
+        $this->generateRepository($metadata, $context, $force);
         $this->generateController($metadata, $context, $force, $withResources);
 
         if ($withResources) {
@@ -165,7 +169,32 @@ class MakeEntity extends Command
         }
     }
 
-    private function generateRepository(string $name, bool $force): void
+    private function generateRepository(EntityMetadata $metadata, GenerationContext $context, bool $force): void
+    {
+        if (!File::exists(app_path('Support/ApiResponse.php'))) {
+            $this->generateLegacyRepository($context->entityName, $force);
+            return;
+        }
+
+        $writer = new SafeFileWriter();
+        $artifacts = [
+            ["Queries/{$context->entityName}QuerySpecification.php", new QuerySpecificationGenerator(), 'Query specification'],
+            ["Queries/{$context->entityName}QueryParser.php", new QueryParserGenerator(), 'Query parser'],
+            ["Queries/{$context->entityName}QueryApplier.php", new QueryApplierGenerator(), 'Query applier'],
+            ["Repositories/{$context->entityName}Repository.php", new RepositoryGenerator(), 'Repository'],
+        ];
+        foreach ($artifacts as [$relative, $generator, $label]) {
+            $this->writeSmartArtifact(
+                $writer,
+                app_path($relative),
+                $generator->generate($metadata, $context),
+                $force,
+                "{$label} : app/{$relative}",
+            );
+        }
+    }
+
+    private function generateLegacyRepository(string $name, bool $force): void
     {
         $dir  = app_path('Repositories');
         $path = $dir.DIRECTORY_SEPARATOR.$name.'Repository.php';

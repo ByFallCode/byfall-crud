@@ -16,6 +16,9 @@ class DeleteEntity extends Command
 
         $paths = [
             app_path("Models/{$name}.php"),
+            app_path("Queries/{$name}QuerySpecification.php"),
+            app_path("Queries/{$name}QueryParser.php"),
+            app_path("Queries/{$name}QueryApplier.php"),
             app_path("Repositories/{$name}Repository.php"),
             app_path("Http/Controllers/{$name}Controller.php"),
             app_path("Http/Requests/{$name}/Store{$name}Request.php"),

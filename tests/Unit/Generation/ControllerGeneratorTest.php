@@ -19,13 +19,17 @@ final class ControllerGeneratorTest extends TestCase
         );
 
         self::assertStringContainsString('use App\\Repositories\\ProductRepository;', $code);
+        self::assertStringContainsString('use App\\Queries\\ProductQueryParser;', $code);
         self::assertStringContainsString('use App\\Support\\ApiResponse;', $code);
         self::assertStringContainsString('use App\\Http\\Resources\\ProductResource;', $code);
         self::assertStringContainsString('StoreProductRequest $request', $code);
         self::assertStringContainsString('UpdateProductRequest $request', $code);
         self::assertStringContainsString('$request->validated()', $code);
         self::assertStringNotContainsString('$request->all()', $code);
-        self::assertStringContainsString('$this->repository->paginate($perPage)', $code);
+        self::assertStringContainsString('$specification = (new ProductQueryParser())->parse($request);', $code);
+        self::assertStringContainsString('$this->repository->paginate($specification)', $code);
+        self::assertStringNotContainsString("query('sort'", $code);
+        self::assertStringNotContainsString("query('include'", $code);
         self::assertStringContainsString('new ProductResource($item)', $code);
         self::assertStringContainsString("ApiResponse::created", $code);
         self::assertStringContainsString("ApiResponse::success", $code);

@@ -17,6 +17,7 @@ final class ControllerGenerator implements Generator
         $storeRequestUse = "use {$context->requestNamespace}\\{$name}\\Store{$name}Request;";
         $updateRequestUse = "use {$context->requestNamespace}\\{$name}\\Update{$name}Request;";
         $repositoryUse = "use App\\Repositories\\{$name}Repository;";
+        $queryParserUse = "use App\\Queries\\{$name}QueryParser;";
         $resourceUse = $context->withResources ? "use {$context->resourceNamespace}\\{$name}Resource;\n" : '';
         $resourceItem = static fn (string $value): string => $context->withResources
             ? "new {$name}Resource({$value})"
@@ -37,6 +38,7 @@ namespace App\Http\Controllers;
 {$storeRequestUse}
 {$updateRequestUse}
 {$resourceUse}{$repositoryUse}
+{$queryParserUse}
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,8 +50,8 @@ class {$name}Controller extends Controller
 
     public function index(Request \$request): JsonResponse
     {
-        \$perPage = (int) (\$request->integer('per_page') ?: 15);
-        \$paginator = \$this->repository->paginate(\$perPage);
+        \$specification = (new {$name}QueryParser())->parse(\$request);
+        \$paginator = \$this->repository->paginate(\$specification);
 {$indexTransform}        return ApiResponse::paginated(\$paginator, '{$plural} retrieved successfully.');
     }
 

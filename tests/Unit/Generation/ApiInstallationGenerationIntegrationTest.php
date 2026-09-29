@@ -6,6 +6,10 @@ namespace ByfallCode\ByfallCrud\Tests\Unit\Generation;
 use ByfallCode\ByfallCrud\Generation\ControllerGenerator;
 use ByfallCode\ByfallCrud\Generation\GenerationContext;
 use ByfallCode\ByfallCrud\Generation\ModelGenerator;
+use ByfallCode\ByfallCrud\Generation\QueryApplierGenerator;
+use ByfallCode\ByfallCrud\Generation\QueryParserGenerator;
+use ByfallCode\ByfallCrud\Generation\QuerySpecificationGenerator;
+use ByfallCode\ByfallCrud\Generation\RepositoryGenerator;
 use ByfallCode\ByfallCrud\Generation\ResourceGenerator;
 use ByfallCode\ByfallCrud\Generation\StoreRequestGenerator;
 use ByfallCode\ByfallCrud\Generation\UpdateRequestGenerator;
@@ -44,6 +48,10 @@ final class ApiInstallationGenerationIntegrationTest extends TestCase
                 (new StoreRequestGenerator())->generate($metadata, $context),
                 (new UpdateRequestGenerator())->generate($metadata, $context),
                 (new ResourceGenerator())->generate($metadata, $context),
+                (new QuerySpecificationGenerator())->generate($metadata, $context),
+                (new QueryParserGenerator())->generate($metadata, $context),
+                (new QueryApplierGenerator())->generate($metadata, $context),
+                (new RepositoryGenerator())->generate($metadata, $context),
                 (new ControllerGenerator())->generate($metadata, $context),
             ];
 
@@ -53,7 +61,10 @@ final class ApiInstallationGenerationIntegrationTest extends TestCase
             self::assertStringContainsString('exists:categories,id', $artifacts[1]);
             self::assertStringContainsString("'category_id' => ['sometimes', 'integer', 'exists:categories,id']", $artifacts[2]);
             self::assertStringContainsString("whenLoaded('category')", $artifacts[3]);
-            self::assertStringContainsString('use App\\Support\\ApiResponse;', $artifacts[4]);
+            self::assertStringContainsString("private const FILTERABLE = [\n        'id',\n        'category_id',\n        'active',\n        'created_at',\n        'updated_at',\n    ];", $artifacts[5]);
+            self::assertStringContainsString("private const ALLOWED_INCLUDES = [\n        'category',\n    ];", $artifacts[5]);
+            self::assertStringContainsString('(new ProductQueryApplier())->apply(Product::query(), $specification)', $artifacts[7]);
+            self::assertStringContainsString('use App\\Support\\ApiResponse;', $artifacts[8]);
             self::assertStringNotContainsString('ByfallCode\\ByfallCrud', implode("\n", $artifacts));
             foreach ($artifacts as $index => $content) {
                 $path = $base.'/artifact-'.$index.'.php';

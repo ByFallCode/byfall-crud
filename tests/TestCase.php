@@ -51,6 +51,9 @@ abstract class TestCase extends Orchestra
     {
         return array_values(array_filter([
             app_path('Models/Category.php'),
+            app_path('Queries/CategoryQuerySpecification.php'),
+            app_path('Queries/CategoryQueryParser.php'),
+            app_path('Queries/CategoryQueryApplier.php'),
             app_path('Repositories/CategoryRepository.php'),
             app_path('Http/Controllers/CategoryController.php'),
             app_path('Http/Requests/Category/StoreCategoryRequest.php'),
@@ -66,6 +69,9 @@ abstract class TestCase extends Orchestra
     {
         File::delete([
             app_path('Models/Category.php'),
+            app_path('Queries/CategoryQuerySpecification.php'),
+            app_path('Queries/CategoryQueryParser.php'),
+            app_path('Queries/CategoryQueryApplier.php'),
             app_path('Repositories/CategoryRepository.php'),
             app_path('Http/Controllers/CategoryController.php'),
             app_path('Http/Requests/Category/StoreCategoryRequest.php'),
