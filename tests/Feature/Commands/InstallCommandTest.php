@@ -54,4 +54,35 @@ final class InstallCommandTest extends TestCase
 
         self::assertSame($custom, file_get_contents($path));
     }
+
+    public function test_installed_provider_is_registered_and_boots_api_middleware(): void
+    {
+        file_put_contents(
+            $this->temporaryBase.'/bootstrap/providers.php',
+            "<?php\n\nuse App\\Providers\\AppServiceProvider;\n\nreturn [\n    AppServiceProvider::class,\n];\n",
+        );
+
+        $this->artisan('byfall:install')
+            ->expectsOutputToContain('API exception handling configured')
+            ->assertExitCode(0);
+
+        foreach ([
+            'app/Support/ApiErrorCode.php',
+            'app/Support/ApiResponse.php',
+            'app/Support/ApiExceptionRenderer.php',
+            'app/Http/Middleware/ForceJsonResponse.php',
+            'app/Providers/ByfallApiServiceProvider.php',
+        ] as $relativePath) {
+            require_once $this->temporaryBase.'/'.$relativePath;
+        }
+
+        $this->app->register(\App\Providers\ByfallApiServiceProvider::class);
+        $apiMiddleware = $this->app['router']->getMiddlewareGroups()['api'] ?? [];
+
+        self::assertContains(\App\Http\Middleware\ForceJsonResponse::class, $apiMiddleware);
+        self::assertSame(1, count(array_filter(
+            $apiMiddleware,
+            static fn (string $middleware): bool => $middleware === \App\Http\Middleware\ForceJsonResponse::class,
+        )));
+    }
 }

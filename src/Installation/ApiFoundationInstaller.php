@@ -38,7 +38,7 @@ final class ApiFoundationInstaller
             return new InstallationResult($files, 'manual_required', false);
         }
 
-        $alreadyRegistered = str_contains($this->files->get($bootstrapProviders), self::PROVIDER.'::class');
+        $alreadyRegistered = $this->providerIsRegistered($this->files->get($bootstrapProviders));
         if (!$alreadyRegistered) {
             $original = $this->files->get($bootstrapProviders);
             try {
@@ -80,9 +80,21 @@ final class ApiFoundationInstaller
     {
         $content = $this->files->get($path);
         return preg_match(
-            '~\A<\?php\s+return\s*\[\s*(?:[A-Za-z_][A-Za-z0-9_\\\\]*::class\s*,\s*)*\];\s*\z~',
+            '~\A<\?php\s+(?:use\s+[A-Za-z_][A-Za-z0-9_\\\\]*\s*;\s*)*return\s*\[\s*(?:[A-Za-z_][A-Za-z0-9_\\\\]*::class\s*,\s*)*\];\s*\z~',
             $content,
         ) === 1;
+    }
+
+    private function providerIsRegistered(string $content): bool
+    {
+        if (str_contains($content, self::PROVIDER.'::class')) {
+            return true;
+        }
+
+        return preg_match(
+            '~use\s+'.preg_quote(self::PROVIDER, '~').'\s*;~',
+            $content,
+        ) === 1 && str_contains($content, 'ByfallApiServiceProvider::class');
     }
 
     private function providerSource(): string
