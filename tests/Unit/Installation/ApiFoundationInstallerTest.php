@@ -138,6 +138,20 @@ final class ApiFoundationInstallerTest extends TestCase
         }
     }
 
+    public function test_published_provider_uses_http_only_laravel_exception_configuration(): void
+    {
+        (new ApiFoundationInstaller())->install($this->basePath);
+        $provider = file_get_contents($this->basePath.'/app/Providers/ByfallApiServiceProvider.php');
+
+        self::assertStringContainsString('use Illuminate\\Support\\Facades\\Exceptions;', $provider);
+        self::assertStringContainsString('if ($this->app->runningInConsole())', $provider);
+        self::assertStringContainsString('Exceptions::shouldRenderJsonWhen(', $provider);
+        self::assertStringContainsString('Exceptions::renderable(', $provider);
+        self::assertStringNotContainsString('Illuminate\\Contracts\\Debug\\ExceptionHandler', $provider);
+        self::assertStringNotContainsString('$handler->', $provider);
+        self::assertStringContainsString("pushMiddlewareToGroup('api', ForceJsonResponse::class)", $provider);
+    }
+
     private function snapshot(): array
     {
         $files = [];

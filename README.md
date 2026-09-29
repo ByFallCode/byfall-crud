@@ -88,6 +88,11 @@ App\Providers\ByfallApiServiceProvider::class,
 
 Running `byfall:install` repeatedly is safe and does not duplicate providers.
 
+Applications that installed an earlier API Foundation keep their published files
+by design. To apply a package hotfix to those five known files, review any local
+customizations and run `php artisan byfall:install --force`; this does not replace
+other application files or modify `bootstrap/app.php`.
+
 ## 🚀 Available Artisan Commands
 
 byfall:install – Install the API response, middleware and exception foundation

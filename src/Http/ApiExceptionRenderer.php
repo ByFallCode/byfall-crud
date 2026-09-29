@@ -30,10 +30,12 @@ final class ApiExceptionRenderer
             $exception instanceof AuthenticationException => ApiResponse::error(
                 'Unauthenticated.', ApiErrorCode::Unauthenticated, Response::HTTP_UNAUTHORIZED,
             ),
-            $exception instanceof AuthorizationException => ApiResponse::error(
+            $exception instanceof AuthorizationException
+                || $this->previousIs($exception, AuthorizationException::class) => ApiResponse::error(
                 'Forbidden.', ApiErrorCode::Forbidden, Response::HTTP_FORBIDDEN,
             ),
-            $exception instanceof ModelNotFoundException => ApiResponse::error(
+            $exception instanceof ModelNotFoundException
+                || $this->previousIs($exception, ModelNotFoundException::class) => ApiResponse::error(
                 'Resource not found.', ApiErrorCode::ResourceNotFound, Response::HTTP_NOT_FOUND,
             ),
             $exception instanceof MethodNotAllowedHttpException => ApiResponse::error(
@@ -61,6 +63,12 @@ final class ApiExceptionRenderer
     {
         return $exception instanceof HttpExceptionInterface
             && $exception->getStatusCode() === Response::HTTP_TOO_MANY_REQUESTS;
+    }
+
+    /** @param class-string<Throwable> $class */
+    private function previousIs(Throwable $exception, string $class): bool
+    {
+        return $exception->getPrevious() instanceof $class;
     }
 
     private function headers(Throwable $exception): array
