@@ -5,10 +5,18 @@ namespace ByfallCode\ByfallCrud\Installation;
 
 final class InstallationResult
 {
-    /** @param array<string,string> $files */
+    /**
+     * @param array<string,string> $files
+     * @param list<string> $legacyArtifacts
+     */
     public function __construct(
         public readonly array $files,
-        public readonly string $integration,
-        public readonly bool $complete,
+        public readonly array $legacyArtifacts = [],
+        public readonly bool $legacyProviderRegistered = false,
     ) {}
+
+    public function hasLegacyFoundation(): bool
+    {
+        return $this->legacyArtifacts !== [] || $this->legacyProviderRegistered;
+    }
 }

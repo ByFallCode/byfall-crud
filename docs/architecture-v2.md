@@ -124,96 +124,54 @@ Intentional V2-L04 output changes are limited to the four Smart Generator artifa
 No historical snapshot required an update. Controller output and all out-of-scope
 legacy artifacts retain their characterized behavior.
 
-## API Foundation
+## Non-invasive API Foundation and Smart Controllers
 
-V2-L05 defines a small, predictable HTTP contract without changing generated
-controllers yet:
+The API Foundation is generated application support code, not a global runtime
+layer:
 
 ```text
-Request -> ForceJsonResponse -> Laravel -> ApiResponse
-Exception -> ApiExceptionRenderer -> ApiResponse
+EntityMetadata -> generators -> Laravel application code
+Controller -> ApiResponse
 ```
 
-`ForceJsonResponse` changes the `Accept` header only for `api/*` requests so Laravel
-correctly selects JSON validation and exception behavior. It never overwrites a
-response `Content-Type`; a plain-text or HTML response is therefore never mislabeled
-as JSON. Web requests are left untouched.
+`byfall:install` publishes only `App\Support\ApiResponse` and
+`App\Support\ApiErrorCode`. It does not publish an application service provider,
+install middleware, intercept exceptions or modify either bootstrap file. The
+package service provider remains distinct: Laravel package discovery uses it only
+to register the package's Artisan commands.
 
 `ApiResponse` provides `success`, `created`, `noContent`, `error` and `paginated`.
-Success payloads contain `success`, `message`, `data` and optional `meta`. Errors
-contain `success`, `message`, a centralized `ApiErrorCode`, and optional `errors`.
-A 204 response has an empty body. Pagination exposes stable scalar metadata and
-keeps navigational URLs in a separate `links` object:
+Success payloads contain `success`, `message`, `data` and optional `meta`. Explicit
+errors contain `success`, `message`, a centralized `ApiErrorCode`, and optional
+`errors`. A 204 response has an empty body. Pagination exposes stable scalar
+metadata and keeps navigational URLs in a separate `links` object:
 
 ```text
 meta: current_page, per_page, last_page, total, from, to
 links: first, last, prev, next
 ```
 
-`ApiExceptionRenderer` maps Laravel validation, authentication, authorization,
-model-not-found and throttle exceptions plus Symfony endpoint and method exceptions.
-Rate-limit headers are preserved. It returns `null` for non-API requests so Laravel's
-normal web exception flow remains responsible. Unexpected production errors expose
-only `INTERNAL_SERVER_ERROR`; messages, stack traces, paths, SQL and other internal
-details are omitted. Debug behavior is controlled by an explicit boolean intended to
-come from `config('app.debug')`, never from `APP_ENV` alone, and still excludes stack,
-file and line data.
-
-### Installation decision
-
-Two approaches were evaluated. Automatic runtime registration from the package is
-simple but silently couples every generated application to Byfall CRUD and can alter
-unrelated HTTP behavior. Rewriting `bootstrap/app.php` automatically would be brittle
-across valid Laravel 12/13 application customizations. V2-L05 therefore chooses the
-limited internal-infrastructure option:
-
-- the foundation is implemented and tested in the package but is not globally
-  registered by its service provider;
-- `bootstrap/app.php` is not modified;
-- no configuration file is introduced because the API prefix, debug flag and
-  pagination values already have clear Laravel sources;
-- a future installer may publish equivalent standard Laravel classes into `App\...`
-  and add an explicit, structure-aware bootstrap integration.
-
-There is no automated installation operation in L05, so there is no repeatable write
-that could duplicate middleware or exception hooks. Idempotence becomes mandatory
-when the public installer is introduced. Until then, consumers integrating the
-foundation manually must register `ForceJsonResponse` for the API middleware group
-and delegate API render callbacks to `ApiExceptionRenderer`, passing
-`(bool) config('app.debug')`. This choice is explicit and avoids claiming that a
-fragile bootstrap rewrite is safe.
-
-## API installation and Smart Controllers
-
-V2-L06 makes the L05 foundation installable with `php artisan byfall:install`.
-Installation publishes autonomous application code to `App\Support`,
-`App\Http\Middleware` and `App\Providers`; published files contain no
-`ByfallCode\ByfallCrud` runtime reference. A generated application can therefore
-retain the installed foundation after removing the generator package.
-
-The installer deliberately leaves `bootstrap/app.php` untouched. For a standard
-Laravel 12/13 `bootstrap/providers.php`, it uses Laravel's own
-`ServiceProvider::addProviderToBootstrapFile()` API to register
-`App\Providers\ByfallApiServiceProvider`. Before calling that API, it recognizes a
-conservative static provider-array shape. Custom or dynamic files are never
-rewritten: the command reports a partial installation, exits unsuccessfully and
-prints the exact provider line for manual addition. The published provider adds
-`ForceJsonResponse` to the API middleware group and delegates API exception
-rendering to the installed renderer. Web exceptions continue through Laravel.
+Laravel remains responsible for normal HTTP exception rendering. The generator does
+not copy global exception behavior into controllers and does not add a hidden
+runtime hook.
 
 Publication uses `SafeFileWriter`. Existing application files are preserved by
-default; `--force` replaces only the known published classes. It never authorizes an
-unsafe bootstrap mutation. Repeated installation preserves file contents and the
-framework registration helper de-duplicates and sorts providers.
+default; `--force` replaces only `ApiResponse.php` and `ApiErrorCode.php`. Repeated
+installation is idempotent and leaves `bootstrap/app.php` and
+`bootstrap/providers.php` byte-for-byte unchanged.
 
-`ControllerGenerator` completes the Smart Generator set for the current CRUD
-surface. It consumes `EntityMetadata` and `GenerationContext`, preserves the legacy
-Repository contract, uses validated FormRequest input, resources when enabled,
-`ApiResponse::paginated`, `created`, `success` and a genuine 204 `noContent`.
-The route parameter is shared with `UpdateRequestGenerator`. If the API Foundation
-is absent, `make:entity` emits an explicit warning and generates the characterized
-legacy controller instead of producing a broken class. Search, filtering, sorting
-and includes remain outside L06.
+Installations created by earlier releases may still contain
+`ByfallApiServiceProvider`, `ForceJsonResponse`, `ApiExceptionRenderer` and a provider
+entry in `bootstrap/providers.php`. The installer detects and reports these elements
+but never removes or rewrites them. Developers must review local customizations
+before removing legacy runtime integration.
+
+`ControllerGenerator` consumes `EntityMetadata` and `GenerationContext`, preserves
+the Repository contract, uses validated FormRequest input, resources when enabled,
+`ApiResponse::paginated`, `created`, `success` and a genuine 204 `noContent`. The
+route parameter is shared with `UpdateRequestGenerator`. If `ApiResponse` is absent,
+`make:entity` emits an explicit warning and generates the characterized legacy
+controller instead of producing a broken class.
 
 ## V2-L07 safe query pipeline
 

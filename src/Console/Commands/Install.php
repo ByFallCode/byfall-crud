@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 
 final class Install extends Command
 {
-    protected $signature = 'byfall:install {--force : Replace published API Foundation classes}';
+    protected $signature = 'byfall:install {--force : Replace the published API response classes}';
     protected $description = 'Install the Byfall CRUD API Foundation into the Laravel application.';
 
     public function handle(): int
@@ -23,18 +23,20 @@ final class Install extends Command
                 : $this->line("  ✓ {$relative} already exists; preserved");
         }
 
-        if (!$result->complete) {
-            $this->components->warn('API exception handling requires manual configuration.');
-            $this->line('Add this provider to bootstrap/providers.php:');
-            $this->line('    '.ApiFoundationInstaller::PROVIDER.'::class,');
-            $this->error('Installation is partial; generated files are safe, but the API Foundation is not connected.');
-            return self::FAILURE;
+        if ($result->hasLegacyFoundation()) {
+            $this->newLine();
+            $this->components->warn('Legacy Byfall API Foundation detected.');
+            foreach ($result->legacyArtifacts as $artifact) {
+                $this->line('  - '.$artifact);
+            }
+            if ($result->legacyProviderRegistered) {
+                $this->line('  - App\\Providers\\ByfallApiServiceProvider::class in bootstrap/providers.php');
+            }
+            $this->line('Review local customizations before removing these legacy elements.');
+            $this->line('No legacy file or bootstrap entry was changed.');
         }
 
-        $this->line($result->integration === 'configured'
-            ? '  ✓ API exception handling configured'
-            : '  ✓ API exception handling already configured');
-        $this->info($result->integration === 'already_configured' ? 'Nothing to change.' : 'Byfall CRUD is ready.');
+        $this->info('Byfall CRUD is ready.');
         return self::SUCCESS;
     }
 }

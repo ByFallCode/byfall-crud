@@ -55,8 +55,10 @@ final class ApiInstallationGenerationIntegrationTest extends TestCase
                 (new ControllerGenerator())->generate($metadata, $context),
             ];
 
-            self::assertTrue($installation->complete);
+            self::assertCount(2, $installation->files);
             self::assertFileExists($base.'/app/Support/ApiResponse.php');
+            self::assertFileExists($base.'/app/Support/ApiErrorCode.php');
+            self::assertFileDoesNotExist($base.'/app/Providers/ByfallApiServiceProvider.php');
             self::assertStringContainsString("'price' => 'decimal:2'", $artifacts[0]);
             self::assertStringContainsString('exists:categories,id', $artifacts[1]);
             self::assertStringContainsString("'category_id' => ['sometimes', 'integer', 'exists:categories,id']", $artifacts[2]);

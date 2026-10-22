@@ -70,28 +70,38 @@ php artisan make:entity Product
 ```
 ---
 
-Laravel automatically discovers the service provider.
+Laravel automatically discovers the package service provider, which only exposes
+the Artisan commands. `byfall:install` publishes two autonomous Laravel classes:
 
-`byfall:install` publishes autonomous Laravel classes under `App\Support` and
-`App\Http\Middleware`, plus `App\Providers\ByfallApiServiceProvider`. It registers
-that provider through Laravel's `bootstrap/providers.php` mechanism. Existing files
-are preserved; use `--force` only when you intentionally want to replace the
-published foundation classes.
-
-If `bootstrap/providers.php` has a custom or unrecognized structure, the command
-does not rewrite it. It exits with a partial-installation warning and prints the
-exact provider line to add manually:
-
-```php
-App\Providers\ByfallApiServiceProvider::class,
+```text
+app/Support/ApiResponse.php
+app/Support/ApiErrorCode.php
 ```
 
-Running `byfall:install` repeatedly is safe and does not duplicate providers.
+It never modifies `bootstrap/app.php`, `bootstrap/providers.php`, middleware groups
+or the global exception handler. Existing files are preserved. Use `--force` only
+when you intentionally want to replace these two published classes. Repeated
+installation is safe and idempotent.
 
-Applications that installed an earlier API Foundation keep their published files
-by design. To apply a package hotfix to those five known files, review any local
-customizations and run `php artisan byfall:install --force`; this does not replace
-other application files or modify `bootstrap/app.php`.
+### Migrating from the legacy API Foundation
+
+Earlier releases could publish `ByfallApiServiceProvider`, `ForceJsonResponse` and
+`ApiExceptionRenderer`, then register the provider in `bootstrap/providers.php`.
+The installer now detects those elements and prints migration guidance without
+changing or deleting them.
+
+To migrate safely:
+
+1. update Byfall CRUD and run `php artisan byfall:install`;
+2. inspect the three legacy files for application-specific customizations;
+3. remove `App\Providers\ByfallApiServiceProvider::class` from
+   `bootstrap/providers.php` if it is still registered;
+4. remove the legacy files only after confirming their behavior is no longer needed;
+5. run `php artisan optimize:clear`.
+
+Never delete customized application files blindly. The current `--force` option
+updates only `ApiResponse.php` and `ApiErrorCode.php`; it does not clean up legacy
+artifacts.
 
 ## 🚀 Available Artisan Commands
 

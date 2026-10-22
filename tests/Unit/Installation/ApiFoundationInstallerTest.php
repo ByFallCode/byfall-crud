@@ -17,7 +17,8 @@ final class ApiFoundationInstallerTest extends TestCase
         $this->basePath = sys_get_temp_dir().DIRECTORY_SEPARATOR.'Byfall Test User'.DIRECTORY_SEPARATOR
             .'My Laravel App '.bin2hex(random_bytes(6));
         (new Filesystem())->ensureDirectoryExists($this->basePath.'/bootstrap');
-        file_put_contents($this->basePath.'/bootstrap/providers.php', "<?php\n\nreturn [\n    App\\Providers\\AppServiceProvider::class,\n];\n");
+        file_put_contents($this->basePath.'/bootstrap/app.php', "<?php\r\n// custom app bootstrap\r\n");
+        file_put_contents($this->basePath.'/bootstrap/providers.php', "<?php\r\n// custom providers\r\nreturn [];\r\n");
     }
 
     protected function tearDown(): void
@@ -25,7 +26,20 @@ final class ApiFoundationInstallerTest extends TestCase
         (new Filesystem())->deleteDirectory($this->basePath);
     }
 
-    public function test_first_second_and_third_installations_are_idempotent(): void
+    public function test_installation_publishes_only_the_non_invasive_foundation(): void
+    {
+        $result = (new ApiFoundationInstaller())->install($this->basePath);
+
+        self::assertCount(2, $result->files);
+        self::assertFileExists($this->basePath.'/app/Support/ApiResponse.php');
+        self::assertFileExists($this->basePath.'/app/Support/ApiErrorCode.php');
+        self::assertFileDoesNotExist($this->basePath.'/app/Support/ApiExceptionRenderer.php');
+        self::assertFileDoesNotExist($this->basePath.'/app/Http/Middleware/ForceJsonResponse.php');
+        self::assertFileDoesNotExist($this->basePath.'/app/Providers/ByfallApiServiceProvider.php');
+        self::assertFalse($result->hasLegacyFoundation());
+    }
+
+    public function test_repeated_installation_is_idempotent_and_preserves_existing_files(): void
     {
         $installer = new ApiFoundationInstaller();
         $first = $installer->install($this->basePath);
@@ -33,123 +47,101 @@ final class ApiFoundationInstallerTest extends TestCase
         $second = $installer->install($this->basePath);
         $third = $installer->install($this->basePath);
 
-        self::assertTrue($first->complete);
-        self::assertCount(5, $first->files);
-        self::assertSame('configured', $first->integration);
-        self::assertTrue($second->complete);
-        self::assertSame('already_configured', $second->integration);
-        self::assertSame('already_configured', $third->integration);
+        self::assertSame(['installed', 'installed'], array_values($first->files));
+        self::assertSame(['preserved', 'preserved'], array_values($second->files));
+        self::assertSame(['preserved', 'preserved'], array_values($third->files));
         self::assertSame($snapshot, $this->snapshot());
-        self::assertSame(1, substr_count(file_get_contents($this->basePath.'/bootstrap/providers.php'), ApiFoundationInstaller::PROVIDER.'::class'));
-        self::assertSame(1, substr_count(file_get_contents($this->basePath.'/app/Providers/ByfallApiServiceProvider.php'), 'pushMiddlewareToGroup'));
     }
 
-    public function test_standard_file_with_imported_provider_is_registered_automatically(): void
+    public function test_install_and_force_leave_both_bootstrap_files_byte_for_byte_unchanged(): void
     {
-        $path = $this->basePath.'/bootstrap/providers.php';
-        file_put_contents($path, "<?php\r\n\r\nuse App\\Providers\\AppServiceProvider;\r\n\r\nreturn [\r\n    AppServiceProvider::class,\r\n];\r\n");
-
-        $result = (new ApiFoundationInstaller())->install($this->basePath);
-        $content = file_get_contents($path);
-
-        self::assertTrue($result->complete);
-        self::assertSame('configured', $result->integration);
-        self::assertStringContainsString('App\\Providers\\AppServiceProvider::class,', $content);
-        self::assertSame(1, substr_count($content, ApiFoundationInstaller::PROVIDER.'::class'));
-    }
-
-    public function test_imported_file_with_provider_already_registered_is_connected_without_rewrite(): void
-    {
-        $path = $this->basePath.'/bootstrap/providers.php';
-        $content = "<?php\r\n\r\nuse App\\Providers\\AppServiceProvider;\r\nuse App\\Providers\\ByfallApiServiceProvider;\r\n\r\nreturn [\r\n    AppServiceProvider::class,\r\n    ByfallApiServiceProvider::class,\r\n];\r\n";
-        file_put_contents($path, $content);
-
-        $result = (new ApiFoundationInstaller())->install($this->basePath);
-
-        self::assertTrue($result->complete);
-        self::assertSame('already_configured', $result->integration);
-        self::assertSame($content, file_get_contents($path));
-    }
-
-    public function test_existing_files_are_preserved_without_force_and_replaced_with_force(): void
-    {
-        $path = $this->basePath.'/app/Support/ApiResponse.php';
-        (new Filesystem())->ensureDirectoryExists(dirname($path));
-        file_put_contents($path, '<?php // application customization');
-
+        $app = file_get_contents($this->basePath.'/bootstrap/app.php');
+        $providers = file_get_contents($this->basePath.'/bootstrap/providers.php');
         $installer = new ApiFoundationInstaller();
-        $preserved = $installer->install($this->basePath);
-        self::assertSame('preserved', $preserved->files[$path]);
-        self::assertSame('<?php // application customization', file_get_contents($path));
 
-        $replaced = $installer->install($this->basePath, true);
-        self::assertSame('installed', $replaced->files[$path]);
-        self::assertStringContainsString('final class ApiResponse', file_get_contents($path));
+        $installer->install($this->basePath);
+        $installer->install($this->basePath, true);
+
+        self::assertSame($app, file_get_contents($this->basePath.'/bootstrap/app.php'));
+        self::assertSame($providers, file_get_contents($this->basePath.'/bootstrap/providers.php'));
+        self::assertSame(hash('sha256', $app), hash_file('sha256', $this->basePath.'/bootstrap/app.php'));
+        self::assertSame(hash('sha256', $providers), hash_file('sha256', $this->basePath.'/bootstrap/providers.php'));
     }
 
-    public function test_unrecognized_bootstrap_is_never_rewritten_and_partial_state_is_reported(): void
+    public function test_force_replaces_only_the_two_supported_files(): void
     {
-        $path = $this->basePath.'/bootstrap/providers.php';
-        $custom = "<?php\n// custom dynamic provider logic\nreturn load_providers();\n";
-        file_put_contents($path, $custom);
+        $installer = new ApiFoundationInstaller();
+        $installer->install($this->basePath);
+        $response = $this->basePath.'/app/Support/ApiResponse.php';
+        $errorCode = $this->basePath.'/app/Support/ApiErrorCode.php';
+        file_put_contents($response, '<?php // customized response');
+        file_put_contents($errorCode, '<?php // customized codes');
+        $unrelated = $this->basePath.'/app/UserFile.php';
+        file_put_contents($unrelated, '<?php // untouched');
 
-        $result = (new ApiFoundationInstaller())->install($this->basePath, true);
+        $result = $installer->install($this->basePath, true);
 
-        self::assertFalse($result->complete);
-        self::assertSame('manual_required', $result->integration);
-        self::assertSame($custom, file_get_contents($path));
-        self::assertFileExists($this->basePath.'/app/Support/ApiResponse.php');
+        self::assertSame(['installed', 'installed'], array_values($result->files));
+        self::assertStringContainsString('final class ApiResponse', file_get_contents($response));
+        self::assertStringContainsString('enum ApiErrorCode', file_get_contents($errorCode));
+        self::assertSame('<?php // untouched', file_get_contents($unrelated));
     }
 
-    public function test_bootstrap_app_is_preserved_byte_for_byte(): void
+    public function test_missing_or_dynamic_bootstrap_files_are_irrelevant_and_never_created_or_rewritten(): void
     {
-        $path = $this->basePath.'/bootstrap/app.php';
-        $content = "<?php\r\n// application bootstrap customization\r\nreturn 'untouched';\r\n";
-        file_put_contents($path, $content);
+        unlink($this->basePath.'/bootstrap/app.php');
+        $dynamic = "<?php\nreturn custom_providers();\n";
+        file_put_contents($this->basePath.'/bootstrap/providers.php', $dynamic);
 
-        $result = (new ApiFoundationInstaller())->install($this->basePath, true);
-
-        self::assertTrue($result->complete);
-        self::assertSame($content, file_get_contents($path));
-        self::assertSame(hash('sha256', $content), hash_file('sha256', $path));
-    }
-
-    public function test_missing_bootstrap_provider_file_is_reported_without_unsafe_creation(): void
-    {
-        unlink($this->basePath.'/bootstrap/providers.php');
         $result = (new ApiFoundationInstaller())->install($this->basePath);
 
-        self::assertFalse($result->complete);
-        self::assertSame('manual_required', $result->integration);
-        self::assertFileDoesNotExist($this->basePath.'/bootstrap/providers.php');
-        self::assertFileExists($this->basePath.'/app/Providers/ByfallApiServiceProvider.php');
+        self::assertCount(2, $result->files);
+        self::assertFileDoesNotExist($this->basePath.'/bootstrap/app.php');
+        self::assertSame($dynamic, file_get_contents($this->basePath.'/bootstrap/providers.php'));
+    }
+
+    public function test_legacy_installation_is_detected_without_being_modified_or_deleted(): void
+    {
+        $legacy = [
+            'app/Providers/ByfallApiServiceProvider.php',
+            'app/Http/Middleware/ForceJsonResponse.php',
+            'app/Support/ApiExceptionRenderer.php',
+        ];
+        foreach ($legacy as $relative) {
+            (new Filesystem())->ensureDirectoryExists(dirname($this->basePath.'/'.$relative));
+            file_put_contents($this->basePath.'/'.$relative, '<?php // customized legacy file');
+        }
+        $providers = "<?php\nreturn [App\\Providers\\ByfallApiServiceProvider::class];\n";
+        file_put_contents($this->basePath.'/bootstrap/providers.php', $providers);
+
+        $result = (new ApiFoundationInstaller())->install($this->basePath, true);
+
+        self::assertTrue($result->hasLegacyFoundation());
+        self::assertSame($legacy, $result->legacyArtifacts);
+        self::assertTrue($result->legacyProviderRegistered);
+        foreach ($legacy as $relative) {
+            self::assertSame('<?php // customized legacy file', file_get_contents($this->basePath.'/'.$relative));
+        }
+        self::assertSame($providers, file_get_contents($this->basePath.'/bootstrap/providers.php'));
     }
 
     public function test_published_code_is_valid_autonomous_application_php(): void
     {
         $result = (new ApiFoundationInstaller())->install($this->basePath);
-        self::assertTrue($result->complete);
         foreach (array_keys($result->files) as $file) {
-            $content = file_get_contents($file);
-            self::assertStringNotContainsString('ByfallCode\\ByfallCrud', $content);
+            self::assertStringNotContainsString('ByfallCode\\ByfallCrud', file_get_contents($file));
             $process = new Process([PHP_BINARY, '-l', $file]);
             $process->run();
             self::assertSame(0, $process->getExitCode(), $process->getErrorOutput().$process->getOutput());
         }
     }
 
-    public function test_published_provider_uses_http_only_laravel_exception_configuration(): void
+    public function test_installer_scope_excludes_sensitive_and_unrelated_application_files(): void
     {
-        (new ApiFoundationInstaller())->install($this->basePath);
-        $provider = file_get_contents($this->basePath.'/app/Providers/ByfallApiServiceProvider.php');
-
-        self::assertStringContainsString('use Illuminate\\Support\\Facades\\Exceptions;', $provider);
-        self::assertStringContainsString('if ($this->app->runningInConsole())', $provider);
-        self::assertStringContainsString('Exceptions::shouldRenderJsonWhen(', $provider);
-        self::assertStringContainsString('Exceptions::renderable(', $provider);
-        self::assertStringNotContainsString('Illuminate\\Contracts\\Debug\\ExceptionHandler', $provider);
-        self::assertStringNotContainsString('$handler->', $provider);
-        self::assertStringContainsString("pushMiddlewareToGroup('api', ForceJsonResponse::class)", $provider);
+        $source = file_get_contents(dirname(__DIR__, 3).'/src/Installation/ApiFoundationInstaller.php');
+        foreach (['.env', 'auth.json', 'composer.json', 'Sanctum', 'database/migrations', 'User.php', 'bootstrap/app.php'] as $forbidden) {
+            self::assertStringNotContainsString($forbidden, $source);
+        }
     }
 
     private function snapshot(): array
@@ -161,13 +153,5 @@ final class ApiFoundationInstallerTest extends TestCase
         }
         ksort($files);
         return $files;
-    }
-
-    public function test_installer_scope_excludes_sensitive_and_unrelated_application_files(): void
-    {
-        $source = file_get_contents(dirname(__DIR__, 3).'/src/Installation/ApiFoundationInstaller.php');
-        foreach (['.env', 'auth.json', 'composer.json', 'Sanctum', 'database/migrations', 'User.php', 'bootstrap/app.php'] as $forbidden) {
-            self::assertStringNotContainsString($forbidden, $source);
-        }
     }
 }
